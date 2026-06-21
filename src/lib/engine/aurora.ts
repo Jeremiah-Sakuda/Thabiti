@@ -23,7 +23,7 @@ import type {
   WindowFilter,
   WindowTotal,
 } from "./types";
-import { windowForEvent } from "./windowing";
+import { windowForEvent, type WindowSpec } from "./windowing";
 
 export interface AuroraEngineOptions {
   writerUrl: string | undefined;
@@ -58,12 +58,16 @@ export class AuroraMeteringEngine implements MeteringEngine {
     }
     this.latenessGraceMs = opts.latenessGraceMs;
     this.windowMs = opts.windowMs;
-    const ssl = sslFor(opts.writerUrl, opts.caCert);
-    this.writer = new Pool({ connectionString: opts.writerUrl, max: 10, ssl });
-    this.reader = new Pool({
-      connectionString: opts.readerUrl ?? opts.writerUrl,
+    const readerUrl = opts.readerUrl ?? opts.writerUrl;
+    this.writer = new Pool({
+      connectionString: pgConnString(opts.writerUrl),
       max: 10,
-      ssl: sslFor(opts.readerUrl ?? opts.writerUrl, opts.caCert),
+      ssl: sslFor(opts.writerUrl, opts.caCert),
+    });
+    this.reader = new Pool({
+      connectionString: pgConnString(readerUrl),
+      max: 10,
+      ssl: sslFor(readerUrl, opts.caCert),
     });
   }
 
@@ -77,96 +81,113 @@ export class AuroraMeteringEngine implements MeteringEngine {
     let accepted = 0;
     let deduped = 0;
     let quarantined = 0;
-    const touched = new Map<string, { customerId: string; metric: string }>();
+    if (events.length === 0) return { accepted, deduped, quarantined, dispositions };
+
+    // Precompute per event once (validate + window derivation).
+    const items: IngestItem[] = events.map((raw) => {
+      const ev = validate(raw);
+      return {
+        ev,
+        micros: parseMicros(ev.quantity),
+        spec: windowForEvent(ev.customerId, ev.metric, ev.eventTime, this.windowMs),
+        ingestTimeMs: ev.ingestTime ?? Date.now(),
+      };
+    });
 
     const client = await this.writer.connect();
     try {
       await client.query("BEGIN");
-      for (const raw of events) {
-        const ev = validate(raw);
-        const micros = parseMicros(ev.quantity);
-        const quantityStr = formatMicros(micros);
-        const ingestTimeMs = ev.ingestTime ?? Date.now();
-        const spec = windowForEvent(ev.customerId, ev.metric, ev.eventTime, this.windowMs);
 
-        // Idempotent dedup FIRST: a re-delivery of an already-admitted event is
-        // already counted — a duplicate, not a late rewrite — even if its window
-        // has since sealed. Quarantining it would mislabel an already-billed
-        // event in the audit trail. event_id is the idempotency key: same id MUST
-        // carry the same payload. A re-delivery whose quantity DIFFERS is a
-        // contract violation — the append-only log is not mutated (first-admitted
-        // value is authoritative); we record an audited `payload_conflict`.
-        const dup = await client.query<{
-          quantity_micros: string;
-          customer_id: string;
-          metric: string;
-          event_time_ms: string;
-        }>(
-          "SELECT quantity_micros, customer_id, metric, event_time_ms FROM event_log WHERE event_id = $1",
-          [ev.eventId],
-        );
-        if (dup.rows.length > 0) {
-          const row = dup.rows[0]!;
-          if (row.quantity_micros !== micros.toString()) {
-            const cspec = windowForEvent(row.customer_id, row.metric, Number(row.event_time_ms), this.windowMs);
-            await client.query(
-              `INSERT INTO correction_epoch
-                 (correction_id, window_key, event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, quarantined_at_ms, reason)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'payload_conflict')
-               ON CONFLICT (event_id) DO NOTHING`,
-              [uuidv7(), cspec.windowKey, ev.eventId, row.customer_id, row.metric, quantityStr, micros.toString(), Number(row.event_time_ms), ingestTimeMs],
-            );
+      // 1. Ensure every distinct (open) window exists — one bulk INSERT.
+      const windowsByKey = new Map<string, WindowSpec>();
+      for (const it of items) if (!windowsByKey.has(it.spec.windowKey)) windowsByKey.set(it.spec.windowKey, it.spec);
+      await bulkEnsureWindows(client, [...windowsByKey.values()]);
+
+      // 2. Which of those windows are already sealed? — one query.
+      const sealedRes = await client.query<{ window_key: string }>(
+        "SELECT window_key FROM billing_window WHERE state = 'sealed' AND window_key = ANY($1)",
+        [[...windowsByKey.keys()]],
+      );
+      const sealed = new Set(sealedRes.rows.map((r) => r.window_key));
+
+      // 3. Existing events for dedup / payload-conflict detection — one query.
+      const existingRes = await client.query<ExistingRow>(
+        "SELECT event_id, quantity_micros, customer_id, metric, event_time_ms FROM event_log WHERE event_id = ANY($1)",
+        [items.map((it) => it.ev.eventId)],
+      );
+      const existing = new Map(existingRes.rows.map((r) => [r.event_id, r]));
+
+      // 4. Partition in JS — identical semantics to the memory engine.
+      const admit: IngestItem[] = [];
+      const corrections: CorrectionRow[] = [];
+      const correctedIds = new Set<string>(); // one correction per event_id
+      const seenInBatch = new Map<string, { micros: string; eventTimeMs: number; windowKey: string }>();
+      const touched = new Map<string, { customerId: string; metric: string }>();
+
+      for (const it of items) {
+        const id = it.ev.eventId;
+        const prior = existing.get(id);
+        const priorBatch = seenInBatch.get(id);
+
+        // Already known (in the log or earlier in this batch) → dedup. event_id is
+        // the idempotency key; a re-delivery whose quantity DIFFERS is a contract
+        // violation recorded as an audited payload_conflict (log never mutated).
+        if (prior || priorBatch) {
+          const priorMicros = prior ? prior.quantity_micros : priorBatch!.micros;
+          if (priorMicros !== it.micros.toString() && !correctedIds.has(id)) {
+            const windowKey = prior
+              ? windowForEvent(prior.customer_id, prior.metric, Number(prior.event_time_ms), this.windowMs).windowKey
+              : priorBatch!.windowKey;
+            corrections.push({
+              windowKey,
+              eventId: id,
+              customerId: it.ev.customerId,
+              metric: it.ev.metric,
+              micros: it.micros, // the rejected, conflicting value
+              eventTimeMs: prior ? Number(prior.event_time_ms) : priorBatch!.eventTimeMs,
+              ingestTimeMs: it.ingestTimeMs,
+              reason: "payload_conflict",
+            });
+            correctedIds.add(id);
           }
           deduped++;
-          dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
+          dispositions.push({ eventId: id, disposition: "deduped" });
           continue;
         }
 
-        const wr = await client.query<{ state: string }>(
-          "SELECT state FROM billing_window WHERE window_key = $1",
-          [spec.windowKey],
-        );
-
-        // Late-after-seal → a NEW event whose window is already sealed is
-        // quarantined into the correction epoch, never merged.
-        if (wr.rows[0]?.state === "sealed") {
-          await client.query(
-            `INSERT INTO correction_epoch
-               (correction_id, window_key, event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, quarantined_at_ms, reason)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'late_after_seal')
-             ON CONFLICT (event_id) DO NOTHING`,
-            [uuidv7(), spec.windowKey, ev.eventId, ev.customerId, ev.metric, quantityStr, micros.toString(), ev.eventTime, ingestTimeMs],
-          );
+        // A NEW event whose target window is already sealed → quarantine.
+        if (sealed.has(it.spec.windowKey)) {
+          if (!correctedIds.has(id)) {
+            corrections.push({
+              windowKey: it.spec.windowKey,
+              eventId: id,
+              customerId: it.ev.customerId,
+              metric: it.ev.metric,
+              micros: it.micros,
+              eventTimeMs: it.ev.eventTime,
+              ingestTimeMs: it.ingestTimeMs,
+              reason: "late_after_seal",
+            });
+            correctedIds.add(id);
+          }
           quarantined++;
-          dispositions.push({ eventId: ev.eventId, disposition: "quarantined", windowKey: spec.windowKey });
+          dispositions.push({ eventId: id, disposition: "quarantined", windowKey: it.spec.windowKey });
           continue;
         }
 
-        // Materialize the (open) window, then append idempotently.
-        await client.query(
-          `INSERT INTO billing_window (window_key, customer_id, metric, window_open_ms, window_close_ms)
-           VALUES ($1,$2,$3,$4,$5) ON CONFLICT (window_key) DO NOTHING`,
-          [spec.windowKey, spec.customerId, spec.metric, spec.windowOpen, spec.windowClose],
-        );
-        const ins = await client.query(
-          `INSERT INTO event_log
-             (event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, ingest_time_ms, payload)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
-           ON CONFLICT (event_id) DO NOTHING`,
-          [ev.eventId, ev.customerId, ev.metric, quantityStr, micros.toString(), ev.eventTime, ingestTimeMs, JSON.stringify(ev.payload ?? {})],
-        );
-
-        if (ins.rowCount === 1) {
-          accepted++;
-          dispositions.push({ eventId: ev.eventId, disposition: "accepted" });
-          touched.set(`${ev.customerId}:${ev.metric}`, { customerId: ev.customerId, metric: ev.metric });
-        } else {
-          deduped++;
-          dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
-        }
+        // Admit.
+        admit.push(it);
+        seenInBatch.set(id, { micros: it.micros.toString(), eventTimeMs: it.ev.eventTime, windowKey: it.spec.windowKey });
+        touched.set(`${it.ev.customerId}:${it.ev.metric}`, { customerId: it.ev.customerId, metric: it.ev.metric });
+        accepted++;
+        dispositions.push({ eventId: id, disposition: "accepted" });
       }
 
-      // Advance watermarks for touched streams (recomputed from the log).
+      // 5–6. Bulk insert admitted events and corrections.
+      await bulkInsertEvents(client, admit);
+      await bulkInsertCorrections(client, corrections);
+
+      // 7. Advance watermarks for touched streams (recomputed from the log).
       for (const { customerId, metric } of touched.values()) {
         await client.query(UPSERT_WATERMARK_SQL, [customerId, metric, this.latenessGraceMs]);
       }
@@ -325,10 +346,30 @@ export class AuroraMeteringEngine implements MeteringEngine {
 
 export type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
 
+/**
+ * Strip ssl-related query params from the connection string. pg v9+ parses
+ * `sslmode=require` as `verify-full` and lets it override an explicit `ssl`
+ * option — which fails against RDS without the CA bundle
+ * (UNABLE_TO_GET_ISSUER_CERT_LOCALLY). We drop those params and drive TLS solely
+ * via the `ssl` object returned by sslFor().
+ */
+export function pgConnString(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("ssl");
+    u.searchParams.delete("uselibpqcompat");
+    return u.toString();
+  } catch {
+    return url.replace(/[?&]sslmode=[^&]*/gi, "").replace(/[?&]uselibpqcompat=[^&]*/gi, "");
+  }
+}
+
 export function sslFor(url: string | undefined, caCert?: string): SslConfig {
-  // Aurora requires TLS.
-  if (!url || !/sslmode=(require|verify-ca|verify-full)/.test(url)) return false;
-  // If a CA bundle is configured, pin it and verify the chain (production).
+  if (!url) return false;
+  // Aurora always uses TLS. With a CA bundle we verify the chain (production
+  // posture); otherwise we still encrypt but skip issuer verification — set
+  // AURORA_CA_CERT (PEM or path) to pin the RDS CA.
   if (caCert) {
     const ca = caCert.includes("BEGIN CERTIFICATE")
       ? caCert // inline PEM
@@ -337,7 +378,6 @@ export function sslFor(url: string | undefined, caCert?: string): SslConfig {
         : caCert;
     return { rejectUnauthorized: true, ca };
   }
-  // Otherwise accept the RDS-managed cert (demo only). Set AURORA_CA_CERT to pin.
   return { rejectUnauthorized: false };
 }
 
@@ -353,4 +393,106 @@ function validate(raw: UsageEvent): UsageEvent {
     throw new Error("event.eventTime must be a finite epoch-ms number");
   parseMicros(raw.quantity);
   return raw;
+}
+
+// ── set-based ingest helpers ──────────────────────────────────────────────────
+
+interface IngestItem {
+  ev: UsageEvent;
+  micros: bigint;
+  spec: WindowSpec;
+  ingestTimeMs: number;
+}
+
+interface ExistingRow {
+  event_id: string;
+  quantity_micros: string;
+  customer_id: string;
+  metric: string;
+  event_time_ms: string;
+}
+
+interface CorrectionRow {
+  windowKey: string;
+  eventId: string;
+  customerId: string;
+  metric: string;
+  micros: bigint;
+  eventTimeMs: number;
+  ingestTimeMs: number;
+  reason: string;
+}
+
+/** One multi-row placeholder group, e.g. ($1,$2,$3) with an optional ::jsonb cast. */
+function rowPlaceholders(rowIndex: number, cols: number, jsonbLastCol = false): string {
+  const base = rowIndex * cols;
+  const parts: string[] = [];
+  for (let c = 1; c <= cols; c++) {
+    parts.push(`$${base + c}${jsonbLastCol && c === cols ? "::jsonb" : ""}`);
+  }
+  return `(${parts.join(",")})`;
+}
+
+async function bulkEnsureWindows(client: import("pg").PoolClient, specs: WindowSpec[]): Promise<void> {
+  if (specs.length === 0) return;
+  const values: unknown[] = [];
+  const rows = specs.map((s, i) => {
+    values.push(s.windowKey, s.customerId, s.metric, s.windowOpen, s.windowClose);
+    return rowPlaceholders(i, 5);
+  });
+  await client.query(
+    `INSERT INTO billing_window (window_key, customer_id, metric, window_open_ms, window_close_ms)
+     VALUES ${rows.join(",")} ON CONFLICT (window_key) DO NOTHING`,
+    values,
+  );
+}
+
+async function bulkInsertEvents(client: import("pg").PoolClient, items: IngestItem[]): Promise<void> {
+  if (items.length === 0) return;
+  const values: unknown[] = [];
+  const rows = items.map((it, i) => {
+    values.push(
+      it.ev.eventId,
+      it.ev.customerId,
+      it.ev.metric,
+      formatMicros(it.micros),
+      it.micros.toString(),
+      it.ev.eventTime,
+      it.ingestTimeMs,
+      JSON.stringify(it.ev.payload ?? {}),
+    );
+    return rowPlaceholders(i, 8, true);
+  });
+  await client.query(
+    `INSERT INTO event_log
+       (event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, ingest_time_ms, payload)
+     VALUES ${rows.join(",")} ON CONFLICT (event_id) DO NOTHING`,
+    values,
+  );
+}
+
+async function bulkInsertCorrections(client: import("pg").PoolClient, corrections: CorrectionRow[]): Promise<void> {
+  if (corrections.length === 0) return;
+  const values: unknown[] = [];
+  const rows = corrections.map((c, i) => {
+    values.push(
+      uuidv7(),
+      c.windowKey,
+      c.eventId,
+      c.customerId,
+      c.metric,
+      formatMicros(c.micros),
+      c.micros.toString(),
+      c.eventTimeMs,
+      c.ingestTimeMs,
+      c.reason,
+    );
+    return rowPlaceholders(i, 10);
+  });
+  await client.query(
+    `INSERT INTO correction_epoch
+       (correction_id, window_key, event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, quarantined_at_ms, reason)
+     VALUES ${rows.join(",")} ON CONFLICT (event_id) DO NOTHING`,
+    values,
+  );
 }
