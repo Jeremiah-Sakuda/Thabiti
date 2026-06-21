@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 560" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#8a93a6"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#57d7ff"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#c084fc"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1060" height="560" fill="#07090e"/>
+  <text x="40" y="46" fill="#f4f7fc" font-size="24" font-weight="700">Thabiti — provably-correct usage metering</text>
+  <text x="40" y="70" fill="#8a93a6" font-size="13">Watermark-bounded temporal determinism on Amazon Aurora PostgreSQL Serverless v2</text>
+
+  <!-- Firehose -->
+  <rect x="40" y="170" width="190" height="150" rx="10" fill="#11151f" stroke="#ffb454" stroke-width="1.5"/>
+  <text x="135" y="200" fill="#ffb454" font-size="14" font-weight="600" text-anchor="middle">Hostile firehose</text>
+  <text x="135" y="228" fill="#c2cad8" font-size="12" text-anchor="middle">duplicates</text>
+  <text x="135" y="250" fill="#c2cad8" font-size="12" text-anchor="middle">out-of-order</text>
+  <text x="135" y="272" fill="#c2cad8" font-size="12" text-anchor="middle">clock skew</text>
+  <text x="135" y="294" fill="#c2cad8" font-size="12" text-anchor="middle">late stragglers</text>
+
+  <!-- Vercel -->
+  <rect x="290" y="160" width="220" height="170" rx="10" fill="#0b0e15" stroke="#3b78ff" stroke-width="1.5"/>
+  <text x="400" y="186" fill="#f4f7fc" font-size="13" font-weight="600" text-anchor="middle">Vercel — region iad1</text>
+  <text x="400" y="203" fill="#5c6477" font-size="11" text-anchor="middle">(us-east-1, adjacent to Aurora)</text>
+  <rect x="312" y="220" width="176" height="90" rx="8" fill="#11151f" stroke="#232a3a"/>
+  <text x="400" y="246" fill="#57d7ff" font-size="12" font-weight="600" text-anchor="middle">Next.js API routes</text>
+  <text x="400" y="268" fill="#c2cad8" font-size="11" text-anchor="middle">append-only ingest</text>
+  <text x="400" y="286" fill="#c2cad8" font-size="11" text-anchor="middle">deterministic aggregation</text>
+
+  <!-- RDS Proxy -->
+  <rect x="560" y="200" width="150" height="90" rx="10" fill="#11151f" stroke="#232a3a" stroke-width="1.5"/>
+  <text x="635" y="240" fill="#f4f7fc" font-size="13" font-weight="600" text-anchor="middle">RDS Proxy</text>
+  <text x="635" y="260" fill="#8a93a6" font-size="11" text-anchor="middle">connection pooling</text>
+
+  <!-- Writer -->
+  <rect x="760" y="120" width="250" height="90" rx="10" fill="#11151f" stroke="#57d7ff" stroke-width="1.5"/>
+  <text x="885" y="150" fill="#57d7ff" font-size="13" font-weight="600" text-anchor="middle">Aurora Serverless v2 · WRITER</text>
+  <text x="885" y="172" fill="#c2cad8" font-size="11" text-anchor="middle">append-only inserts under the flood</text>
+  <text x="885" y="190" fill="#5c6477" font-size="11" text-anchor="middle">independent ACU scaling · min ≈ 0</text>
+
+  <!-- Reader -->
+  <rect x="760" y="280" width="250" height="90" rx="10" fill="#11151f" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="885" y="310" fill="#c084fc" font-size="13" font-weight="600" text-anchor="middle">Aurora Serverless v2 · READER</text>
+  <text x="885" y="332" fill="#c2cad8" font-size="11" text-anchor="middle">Optimized Reads · window-fn aggregation</text>
+  <text x="885" y="350" fill="#5c6477" font-size="11" text-anchor="middle">independent ACU scaling · min ≈ 0</text>
+
+  <!-- Shared storage -->
+  <rect x="610" y="430" width="400" height="80" rx="10" fill="#0b0e15" stroke="#7c8cff" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="810" y="460" fill="#cdd4ff" font-size="13" font-weight="600" text-anchor="middle">Shared distributed storage</text>
+  <text x="810" y="482" fill="#c2cad8" font-size="11" text-anchor="middle">MVCC-snapshot-consistent append-only event_log</text>
+  <text x="810" y="500" fill="#5c6477" font-size="11" text-anchor="middle">the single source of truth · total order (event_time, event_id)</text>
+
+  <!-- Arrows -->
+  <line x1="230" y1="245" x2="286" y2="245" stroke="#8a93a6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="510" y1="245" x2="556" y2="245" stroke="#8a93a6" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="533" y="237" fill="#5c6477" font-size="10" text-anchor="middle">writes</text>
+  <text x="533" y="262" fill="#5c6477" font-size="10" text-anchor="middle">reads</text>
+
+  <!-- proxy to writer -->
+  <path d="M710,225 C740,225 740,165 756,165" fill="none" stroke="#57d7ff" stroke-width="1.5" marker-end="url(#arrowCyan)"/>
+  <!-- proxy to reader -->
+  <path d="M710,265 C740,265 740,325 756,325" fill="none" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+
+  <!-- writer/reader to storage -->
+  <path d="M885,210 C885,300 760,360 810,426" fill="none" stroke="#57d7ff" stroke-width="1.2" opacity="0.6" marker-end="url(#arrowCyan)"/>
+  <path d="M885,370 C885,395 850,405 850,426" fill="none" stroke="#c084fc" stroke-width="1.2" opacity="0.6" marker-end="url(#arrowPurple)"/>
+
+  <!-- footnote -->
+  <text x="40" y="540" fill="#5c6477" font-size="11">The number is a SQL fact: one window-function aggregation under a total order → byte-identical across replays. Sealed windows are immutable; late events are quarantined into an audited correction epoch.</text>
+</svg>
