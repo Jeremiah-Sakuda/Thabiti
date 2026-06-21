@@ -32,6 +32,9 @@ coverage/
 /tmp-thabiti/
 .thabiti-runtime/
 
+# --- Local tooling ---
+.claude/
+
 # --- Editor / OS ---
 .DS_Store
 *.log

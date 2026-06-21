@@ -1,6 +1,9 @@
 /** Thin HTTP client for the Thabiti API, used by the chaos harness. */
 
+import type { AcuView, StateView } from "../lib/api-types";
 import type { IngestResult, SealResult, UsageEvent, WindowTotal } from "../lib/engine/types";
+
+export type { AcuView, EnrichedWindow, StateView } from "../lib/api-types";
 
 export const BASE_URL = process.env.THABITI_BASE_URL ?? "http://localhost:3000";
 
@@ -18,38 +21,6 @@ async function get<T>(path: string): Promise<T> {
   const res = await fetch(BASE_URL + path);
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}: ${await res.text()}`);
   return (await res.json()) as T;
-}
-
-export interface AcuView {
-  writerAcu: number;
-  readerAcu: number;
-  minAcu: number;
-  maxAcu: number;
-  source: string;
-  costUsd: number;
-  acuHourUsd: number;
-  acuSecondsWriter: number;
-  acuSecondsReader: number;
-  runSeconds: number;
-}
-
-export interface EnrichedWindow {
-  windowKey: string;
-  customerId: string;
-  metric: string;
-  state: "open" | "sealed";
-  billedTotal: string;
-  billedTotalMicros: string;
-  eventCount: number;
-}
-
-export interface StateView {
-  backend: string;
-  config: { windowMs: number; latenessGraceMs: number; region: string; acuHourUsd: number; minAcu: number; maxAcu: number };
-  windows: EnrichedWindow[];
-  watermarks: { customerId: string; metric: string; watermark: number }[];
-  corrections: { eventId: string; reason: string; quantity: string; windowKey: string }[];
-  acu: AcuView;
 }
 
 export const api = {
