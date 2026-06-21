@@ -4,8 +4,14 @@ export interface AuroraConfig {
   writerUrl: string | undefined;
   readerUrl: string | undefined;
   clusterId: string;
+  /** DBInstanceIdentifiers for CloudWatch ServerlessDatabaseCapacity (optional). */
+  writerInstanceId: string | undefined;
+  readerInstanceId: string | undefined;
   region: string;
   acuHourUsd: number;
+  /** Serverless v2 ACU bounds (for the simulated graph + cost framing). */
+  minAcu: number;
+  maxAcu: number;
 }
 
 export interface ThabitiConfig {
@@ -42,8 +48,12 @@ export function getConfig(): ThabitiConfig {
       writerUrl: process.env.AURORA_WRITER_URL,
       readerUrl: process.env.AURORA_READER_URL ?? process.env.AURORA_WRITER_URL,
       clusterId: process.env.AURORA_CLUSTER_ID ?? "thabiti-cluster",
+      writerInstanceId: process.env.AURORA_WRITER_INSTANCE_ID,
+      readerInstanceId: process.env.AURORA_READER_INSTANCE_ID,
       region: process.env.AWS_REGION ?? "us-east-1",
       acuHourUsd: num(process.env.AURORA_ACU_HOUR_USD, 0.12),
+      minAcu: num(process.env.AURORA_MIN_ACU, 0),
+      maxAcu: num(process.env.AURORA_MAX_ACU, 16),
     },
   };
 }
