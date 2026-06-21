@@ -142,6 +142,26 @@ export function runInvariantSuite(ctx: SuiteContext): void {
       expect(t2).toEqual(t1);
     });
 
+    it("audit fidelity: re-delivering an already-billed event after seal is a dedup, not a quarantine", async () => {
+      const scenario = buildScenario({ seed: 8, windowMs: ctx.windowMs, windowCount: 3 });
+      await engine.ingest(scenario.events); // all admitted (seal-at-end)
+      await engine.sealDueWindows();
+
+      const sealed = (await engine.windows()).find((w) => w.state === "sealed");
+      expect(sealed).toBeDefined();
+      const billed = scenario.events.find(
+        (e) => windowForEvent(e.customerId, e.metric, e.eventTime, ctx.windowMs).windowKey === sealed!.windowKey,
+      );
+      expect(billed).toBeDefined();
+
+      const corrBefore = (await engine.corrections(sealed!.windowKey)).length;
+      const res = await engine.ingest([billed!]); // re-deliver an already-billed event into the now-sealed window
+
+      expect(res.deduped).toBe(1); // already counted → a duplicate
+      expect(res.quarantined).toBe(0); // NOT a late rewrite
+      expect((await engine.corrections(sealed!.windowKey)).length).toBe(corrBefore); // no false-positive correction
+    });
+
     it("idempotency: re-ingesting an already-sealed window's events leaves the total fixed", async () => {
       const scenario = buildScenario({ seed: 3, windowMs: ctx.windowMs, windowCount: 3 });
       const keys = scenarioWindowKeys(scenario);

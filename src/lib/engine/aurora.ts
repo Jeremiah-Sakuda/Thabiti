@@ -84,12 +84,27 @@ export class AuroraMeteringEngine implements MeteringEngine {
         const ingestTimeMs = ev.ingestTime ?? Date.now();
         const spec = windowForEvent(ev.customerId, ev.metric, ev.eventTime, this.windowMs);
 
+        // Idempotent dedup FIRST: a re-delivery of an already-admitted event is
+        // already counted — a duplicate, not a late rewrite — even if its window
+        // has since sealed. Quarantining it would mislabel an already-billed
+        // event in the audit trail.
+        const dup = await client.query(
+          "SELECT 1 FROM event_log WHERE event_id = $1",
+          [ev.eventId],
+        );
+        if ((dup.rowCount ?? 0) > 0) {
+          deduped++;
+          dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
+          continue;
+        }
+
         const wr = await client.query<{ state: string }>(
           "SELECT state FROM billing_window WHERE window_key = $1",
           [spec.windowKey],
         );
 
-        // Late-after-seal → quarantine into the correction epoch, never merged.
+        // Late-after-seal → a NEW event whose window is already sealed is
+        // quarantined into the correction epoch, never merged.
         if (wr.rows[0]?.state === "sealed") {
           await client.query(
             `INSERT INTO correction_epoch

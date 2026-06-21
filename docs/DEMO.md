@@ -1,8 +1,11 @@
 # Demo runbook (< 3 minutes)
 
-The product is built so this exact run is real, live, and impossible to fake.
+The product is built so this exact run is real and live — the crash is a genuine
+`kill -9`, the totals are recomputed by the engine, nothing is scripted theatre.
 One seeded command drives all four beats. Lay out a terminal and a browser
-(`http://localhost:3000`) side by side.
+(`http://localhost:3000`) side by side. Note the default backend is `memory`
+(same invariant, zero cloud deps); set `THABITI_BACKEND=aurora` to run the
+identical beats against the live cluster for the recorded submission.
 
 ## Setup
 

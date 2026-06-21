@@ -37,6 +37,15 @@ backends (in-memory and Aurora) for any seed:
    restart, re-ingest from the durable append-only log → the recovered total is
    bit-identical to the deterministic projection.
 
+**What the guarantee precisely says.** Determinism is *watermark-bounded*: the
+billed total is a pure function of the **admitted event set**, evaluated under
+the canonical total order. The determinism-critical paths therefore seal at the
+end of the admitted set — the watermark's allowed-lateness bound defines what is
+admitted vs. quarantined. (Sealing a window mid-flood and *then* delivering a
+genuinely in-window event beyond the lateness bound correctly quarantines it;
+that is the immutability guarantee at work, not a contradiction of it. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#why-seal-at-end-on-the-determinism-paths).)
+
 Deduplication and idempotency exist here as **plumbing** — necessary, never the
 headline. The headline is temporal determinism and window sealing.
 
@@ -105,8 +114,11 @@ Why Aurora is the protagonist, not a store:
   cost are the story — a fixed-size instance cannot show it.
 - **One MVCC-snapshot-consistent log.** The aggregation reads a single consistent
   snapshot of the append-only log; combined with the total order, the result is
-  stable and reproducible. A sharded / eventually-consistent store cannot give
-  the single-snapshot total order the determinism proof depends on.
+  stable and reproducible *at scale and under concurrent ingest*. (The
+  determinism itself rests on the total order + exact integer arithmetic — which
+  is exactly why the in-memory engine reproduces the same bytes; Aurora is what
+  makes that hold for a real firehose against a live writer while the reader
+  folds the log on an isolated snapshot.)
 - **RDS Proxy** pools connections so serverless functions never storm Postgres.
 - **Region pinning.** `vercel.json` pins functions to `iad1`, adjacent to the
   cluster, killing cross-region latency to the writer/reader.
@@ -132,8 +144,11 @@ identical regardless of physical row order — that is why "identical across thr
 replays" is true because the database computes it deterministically, not because
 application code added the same numbers in the same order. Money is summed as
 exact `bigint` micro-units, so totals are associative and match
-[the in-memory engine](src/lib/engine/determinism.ts) byte-for-byte (enforced by
-`tests/sql-drift.test.ts` and the cross-backend parity test).
+[the in-memory engine](src/lib/engine/determinism.ts) byte-for-byte. This parity
+is guarded two ways: `tests/sql-drift.test.ts` pins the SQL text byte-for-byte to
+the canonical strings the engine executes, and the memory↔aurora parity test
+asserts identical totals for the same seed **when `AURORA_WRITER_URL` is set**
+(it skips otherwise, so run it against a cluster to see it green).
 
 ## Backends
 

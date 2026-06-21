@@ -90,8 +90,18 @@ export class MemoryMeteringEngine implements MeteringEngine {
       const spec = windowForEvent(ev.customerId, ev.metric, ev.eventTime, this.windowMs);
       const existingWindow = this.windowMap.get(spec.windowKey);
 
-      // Late-after-seal: the target window is already sealed. The event is NOT
-      // merged into the sealed total; it is quarantined into the correction
+      // Idempotent dedup on event_id (plumbing) — checked FIRST. A re-delivery of
+      // an already-admitted event is already counted; it is a duplicate, not a
+      // late rewrite, even if its window has since sealed. Quarantining it would
+      // mislabel an already-billed event in the audit trail.
+      if (this.log.has(ev.eventId)) {
+        deduped++;
+        dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
+        continue;
+      }
+
+      // Late-after-seal: a NEW event whose target window is already sealed. It is
+      // NOT merged into the sealed total; it is quarantined into the correction
       // epoch. The sealed number cannot move.
       if (existingWindow && existingWindow.state === "sealed") {
         if (!this.quarantinedIds.has(ev.eventId)) {
@@ -112,13 +122,6 @@ export class MemoryMeteringEngine implements MeteringEngine {
         }
         quarantined++;
         dispositions.push({ eventId: ev.eventId, disposition: "quarantined", windowKey: spec.windowKey });
-        continue;
-      }
-
-      // Idempotent dedup on event_id (plumbing).
-      if (this.log.has(ev.eventId)) {
-        deduped++;
-        dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
         continue;
       }
 

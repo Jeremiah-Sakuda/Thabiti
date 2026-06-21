@@ -12,7 +12,10 @@ import { getConfig, type ThabitiConfig } from "./config";
  *    otherwise the same activity-driven estimate (`source: "estimated"`).
  *
  * Independent writer/reader scaling over one shared, snapshot-consistent log —
- * and the collapse to ~0 — is the "Best Use of Aurora" story, shown not asserted.
+ * and the collapse to ~0 — is the Aurora-integration story behind the Best
+ * Technical Implementation prize. NOTE: on the memory backend (and the aurora
+ * backend without the AWS SDK + instance ids) these numbers are a labeled
+ * simulation; only `source: "cloudwatch"` is measured ACU.
  */
 
 export type AcuSource = "simulated" | "cloudwatch" | "estimated";
