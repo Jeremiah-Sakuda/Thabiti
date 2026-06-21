@@ -1,0 +1,41 @@
+# --- Strategy & planning artifacts (KEEP LOCAL — never commit) ---
+PRD.md
+STRATEGY.md
+STRATEGY*.md
+HANDOFF.md
+notes/
+*.local.md
+
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+
+# --- Dependencies ---
+node_modules/
+.pnp
+.pnp.js
+
+# --- Next.js / build output ---
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# --- Test / coverage ---
+coverage/
+.vitest/
+
+# --- Runtime / harness artifacts ---
+*.wal.jsonl
+/tmp-thabiti/
+.thabiti-runtime/
+
+# --- Editor / OS ---
+.DS_Store
+*.log
+.idea/
+.vscode/
+*.tsbuildinfo
+.vercel

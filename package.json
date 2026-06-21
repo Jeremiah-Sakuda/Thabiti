@@ -1,0 +1,38 @@
+{
+  "name": "thabiti",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The metering engine that makes a usage invoice provably correct.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "harness": "tsx src/harness/run.ts",
+    "harness:crash": "tsx src/harness/crash.ts",
+    "harness:ingester": "tsx src/harness/ingester.ts",
+    "db:schema": "tsx src/scripts/apply-schema.ts",
+    "db:check": "tsx src/scripts/check-determinism.ts"
+  },
+  "dependencies": {
+    "next": "^16.2.9",
+    "pg": "^8.13.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
