@@ -8,7 +8,7 @@ algorithm, and how Amazon Aurora PostgreSQL Serverless v2 enforces the guarantee
 ## Data flow
 
 ```
-hostile firehose                Vercel (iad1, us-east-1)            Amazon Aurora Serverless v2
+hostile firehose                Vercel (pdx1, us-west-2)            Amazon Aurora Serverless v2
 ─────────────────               ────────────────────────           ───────────────────────────
 duplicates                 ┌─> POST /api/ingest  ──── writes ──┐
 out-of-order      ───────> │                                   ├─> RDS Proxy ─> WRITER endpoint ─┐
@@ -24,7 +24,7 @@ late stragglers            └─> GET  /api/state    ─ reads ─────�
 - Both endpoints sit over **one MVCC-snapshot-consistent storage layer**, so the
   aggregation reads a single consistent snapshot of the log.
 - **RDS Proxy** pools connections so serverless functions never storm Postgres.
-- Functions are **pinned to `iad1`** (adjacent to the cluster) via `vercel.json`.
+- Functions are **pinned to `pdx1`** (adjacent to the cluster) via `vercel.json`.
 
 ## Data model (append-only log)
 

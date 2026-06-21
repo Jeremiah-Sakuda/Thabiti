@@ -2,7 +2,7 @@
 
 The whole project runs locally with **zero cloud dependencies**
 (`THABITI_BACKEND=memory`). Follow this only to run the real Aurora-backed engine
-and deploy to Vercel. Region throughout: **`us-east-1`**.
+and deploy to Vercel. Region throughout: **`us-west-2`**.
 
 ## 1. Provision Aurora PostgreSQL Serverless v2
 
@@ -38,7 +38,7 @@ Copy `.env.example` to `.env.local` (Next.js) / `.env` (scripts) and set:
 THABITI_BACKEND=aurora
 AURORA_WRITER_URL=postgresql://USER:PASS@<proxy-writer-endpoint>:5432/thabiti?sslmode=require
 AURORA_READER_URL=postgresql://USER:PASS@<proxy-readonly-endpoint>:5432/thabiti?sslmode=require
-AWS_REGION=us-east-1
+AWS_REGION=us-west-2
 AURORA_CLUSTER_ID=thabiti-cluster
 AURORA_WRITER_INSTANCE_ID=thabiti-instance-1     # for live CloudWatch ACU
 AURORA_READER_INSTANCE_ID=thabiti-reader-1       # for live CloudWatch ACU
@@ -82,7 +82,7 @@ for the submission.
 ## 6. Deploy to Vercel
 
 1. Import the repo into Vercel.
-2. `vercel.json` already pins functions to **`iad1`** (adjacent to the cluster) —
+2. `vercel.json` already pins functions to **`pdx1`** (adjacent to the cluster) —
    keep it.
 3. Add the env vars from step 3 in the Vercel project settings.
 4. Deploy. The serverless functions reach Aurora through RDS Proxy in-region.

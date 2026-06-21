@@ -156,7 +156,7 @@ export function Dashboard() {
             <span className={styles.badgeDot} /> backend <b>{backend}</b>
           </span>
           <span className={styles.badge}>
-            region <b>{state?.config.region ?? "us-east-1"}</b>
+            region <b>{state?.config.region ?? "us-west-2"}</b>
           </span>
           <span className={styles.badge}>
             ACU source <b>{acu?.source ?? "—"}</b>

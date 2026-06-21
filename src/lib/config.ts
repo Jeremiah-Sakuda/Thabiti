@@ -53,7 +53,7 @@ export function getConfig(): ThabitiConfig {
       writerInstanceId: process.env.AURORA_WRITER_INSTANCE_ID,
       readerInstanceId: process.env.AURORA_READER_INSTANCE_ID,
       caCert: process.env.AURORA_CA_CERT,
-      region: process.env.AWS_REGION ?? "us-east-1",
+      region: process.env.AWS_REGION ?? "us-west-2",
       acuHourUsd: num(process.env.AURORA_ACU_HOUR_USD, 0.12),
       minAcu: num(process.env.AURORA_MIN_ACU, 0),
       maxAcu: num(process.env.AURORA_MAX_ACU, 16),

@@ -101,7 +101,7 @@ equal, and the ACU graphs spike then collapse.
 ```mermaid
 flowchart LR
   FH["Hostile usage firehose<br/>dupes · out-of-order · skew · late"] --> V
-  subgraph VRC["Vercel — region iad1 (us-east-1)"]
+  subgraph VRC["Vercel — region pdx1 (us-west-2)"]
     V["Next.js API routes<br/>append-only ingest + aggregation"]
   end
   V -->|"writes"| RP[["RDS Proxy<br/>connection pooling"]]
@@ -128,7 +128,7 @@ Why Aurora is the protagonist, not a store:
   makes that hold for a real firehose against a live writer while the reader
   folds the log on an isolated snapshot.)
 - **RDS Proxy** pools connections so serverless functions never storm Postgres.
-- **Region pinning.** `vercel.json` pins functions to `iad1`, adjacent to the
+- **Region pinning.** `vercel.json` pins functions to `pdx1`, adjacent to the
   cluster, killing cross-region latency to the writer/reader.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full data flow and
