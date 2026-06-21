@@ -8,8 +8,15 @@ import { MemoryMeteringEngine } from "./memory";
  */
 export async function createEngine(cfg: ThabitiConfig = getConfig()): Promise<MeteringEngine> {
   if (cfg.backend === "aurora") {
-    // The Aurora engine is wired in alongside the deterministic SQL.
-    throw new Error("aurora backend not yet available in this build");
+    const { AuroraMeteringEngine } = await import("./aurora");
+    const engine = new AuroraMeteringEngine({
+      writerUrl: cfg.aurora.writerUrl,
+      readerUrl: cfg.aurora.readerUrl,
+      latenessGraceMs: cfg.latenessGraceMs,
+      windowMs: cfg.windowMs,
+    });
+    await engine.init(); // idempotent schema apply on cold start
+    return engine;
   }
   return new MemoryMeteringEngine({
     latenessGraceMs: cfg.latenessGraceMs,
