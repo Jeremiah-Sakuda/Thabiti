@@ -24,7 +24,9 @@ export function QuarantineFeed({ corrections }: { corrections: CorrectionView[] 
                 <span className={styles.feedIcon}>⟶</span>
                 <div className={styles.feedMain}>
                   <div className={styles.feedTitle}>
-                    late event rejected from sealed window
+                    {c.reason === "payload_conflict"
+                      ? "conflicting re-delivery rejected (id already billed)"
+                      : "late event rejected from sealed window"}
                   </div>
                   <div className={styles.feedSub}>
                     {shortId(c.eventId)} · {c.metric} · {c.reason}

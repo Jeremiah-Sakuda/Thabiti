@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 
 import { getConfig } from "../lib/config";
+import { sslFor } from "../lib/engine/aurora";
 import { SCHEMA_SQL } from "../lib/sql/statements";
 import { loadEnv } from "./_env";
 
@@ -12,10 +13,10 @@ async function main(): Promise<void> {
     console.error("AURORA_WRITER_URL is not set. Configure .env (see .env.example).");
     process.exit(1);
   }
-  const ssl = /sslmode=(require|verify-ca|verify-full)/.test(cfg.aurora.writerUrl)
-    ? { rejectUnauthorized: false }
-    : undefined;
-  const pool = new Pool({ connectionString: cfg.aurora.writerUrl, ssl });
+  const pool = new Pool({
+    connectionString: cfg.aurora.writerUrl,
+    ssl: sslFor(cfg.aurora.writerUrl, cfg.aurora.caCert), // honors AURORA_CA_CERT pinning
+  });
   console.log("Applying schema to Aurora writer endpoint…");
   await pool.query(SCHEMA_SQL);
   console.log("✓ schema applied (event_log, stream_watermark, billing_window, correction_epoch)");

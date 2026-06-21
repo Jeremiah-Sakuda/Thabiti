@@ -63,7 +63,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
   private readonly streams = new Map<string, StreamState>();
   private readonly windowMap = new Map<string, BillingWindow>();
   private readonly correctionLog: CorrectionRecord[] = [];
-  private readonly quarantinedIds = new Set<string>();
+  private readonly correctedIds = new Set<string>();
 
   private readonly latenessGraceMs: number;
   private readonly windowMs: number;
@@ -94,7 +94,18 @@ export class MemoryMeteringEngine implements MeteringEngine {
       // an already-admitted event is already counted; it is a duplicate, not a
       // late rewrite, even if its window has since sealed. Quarantining it would
       // mislabel an already-billed event in the audit trail.
-      if (this.log.has(ev.eventId)) {
+      //
+      // event_id is the idempotency key: deliveries of the same id MUST carry the
+      // same billable payload. The append-only log is never mutated, so the
+      // first-admitted value is authoritative. A re-delivery whose quantity
+      // DIFFERS is a contract violation; rather than silently first-write-wins
+      // (which would make the total arrival-order-dependent), we detect it and
+      // record an audited `payload_conflict` — the sealed/open total never moves.
+      const existing = this.log.get(ev.eventId);
+      if (existing) {
+        if (existing.quantityMicros !== parseMicros(ev.quantity)) {
+          this.recordConflict(existing, parseMicros(ev.quantity));
+        }
         deduped++;
         dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
         continue;
@@ -104,7 +115,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
       // NOT merged into the sealed total; it is quarantined into the correction
       // epoch. The sealed number cannot move.
       if (existingWindow && existingWindow.state === "sealed") {
-        if (!this.quarantinedIds.has(ev.eventId)) {
+        if (!this.correctedIds.has(ev.eventId)) {
           const correction: CorrectionRecord = {
             correctionId: uuidv7(this.clock()),
             windowKey: spec.windowKey,
@@ -117,7 +128,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
             reason: "late_after_seal",
           };
           this.correctionLog.push(correction);
-          this.quarantinedIds.add(ev.eventId);
+          this.correctedIds.add(ev.eventId);
           this.wal({ t: "correction", c: correction });
         }
         quarantined++;
@@ -211,7 +222,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
     this.streams.clear();
     this.windowMap.clear();
     this.correctionLog.length = 0;
-    this.quarantinedIds.clear();
+    this.correctedIds.clear();
     if (this.walPath) {
       mkdirSync(dirname(this.walPath), { recursive: true });
       writeFileSync(this.walPath, "");
@@ -223,6 +234,27 @@ export class MemoryMeteringEngine implements MeteringEngine {
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  /** Record an audited payload conflict for a re-delivered id whose quantity
+   * differs from the first-admitted (authoritative) value. Idempotent. */
+  private recordConflict(existing: LoggedEvent, conflictingMicros: bigint): void {
+    if (this.correctedIds.has(existing.eventId)) return;
+    const spec = windowForEvent(existing.customerId, existing.metric, existing.eventTime, this.windowMs);
+    const correction: CorrectionRecord = {
+      correctionId: uuidv7(this.clock()),
+      windowKey: spec.windowKey,
+      eventId: existing.eventId,
+      customerId: existing.customerId,
+      metric: existing.metric,
+      quantity: formatMicros(conflictingMicros), // the rejected, conflicting value
+      eventTime: existing.eventTime,
+      quarantinedAt: this.clock(),
+      reason: "payload_conflict",
+    };
+    this.correctionLog.push(correction);
+    this.correctedIds.add(existing.eventId);
+    this.wal({ t: "correction", c: correction });
+  }
 
   private streamWatermark(customerId: string, metric: string): number | null {
     const s = this.streams.get(streamKey(customerId, metric));
@@ -309,7 +341,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
         }
       } else {
         this.correctionLog.push(rec.c);
-        this.quarantinedIds.add(rec.c.eventId);
+        this.correctedIds.add(rec.c.eventId);
       }
     }
   }

@@ -57,8 +57,11 @@ in three arrival orders — **same total, to the byte.**
 ### Beat 4 — the collapse (2:15–3:00)
 
 The flood ends. Writer and reader ACU **collapse to ~0**. The run's **cost** is
-on screen, computed from measured ACU-seconds × the published Aurora ACU-hour
-price.
+on screen, computed from ACU-seconds × the published Aurora ACU-hour price. The
+ACU figures are a labeled simulation by default; install `@aws-sdk/client-cloudwatch`
+and set the instance ids to show **measured** `ServerlessDatabaseCapacity`
+(`source: "cloudwatch"`), and capture the AWS console graph as the definitive
+proof.
 
 > *"This provably-correct invoice cost \$X.XX of Aurora compute. Zero idle spend.
 > The database scaled to meet a hostile firehose and then disappeared."*

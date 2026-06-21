@@ -43,6 +43,11 @@ mutation. (Full DDL: [`src/lib/sql/schema.sql`](../src/lib/sql/schema.sql).)
 
 1. **Ingest.** Append every event to the log; duplicates are absorbed
    idempotently (`ON CONFLICT (event_id) DO NOTHING`). Plumbing — not the story.
+   `event_id` is the idempotency key, so a re-delivery whose payload *differs*
+   (same id, different quantity) is a contract violation: the append-only log is
+   never mutated, and the conflict is recorded as an audited `payload_conflict`
+   correction rather than silently first-write-wins (which would make the total
+   arrival-order-dependent).
 2. **Watermark advance.** Per stream, `watermark = max(event_time seen) −
    lateness_grace`, monotonic. The watermark is the assertion: "no further events
    with event-time ≤ W will be admitted into an open window."

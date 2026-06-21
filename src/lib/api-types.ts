@@ -63,6 +63,7 @@ export interface StateView {
 }
 
 export interface ReplayView {
+  backend: string;
   seed: number;
   orders: number;
   allEqual: boolean;

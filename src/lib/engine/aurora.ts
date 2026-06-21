@@ -92,12 +92,31 @@ export class AuroraMeteringEngine implements MeteringEngine {
         // Idempotent dedup FIRST: a re-delivery of an already-admitted event is
         // already counted — a duplicate, not a late rewrite — even if its window
         // has since sealed. Quarantining it would mislabel an already-billed
-        // event in the audit trail.
-        const dup = await client.query(
-          "SELECT 1 FROM event_log WHERE event_id = $1",
+        // event in the audit trail. event_id is the idempotency key: same id MUST
+        // carry the same payload. A re-delivery whose quantity DIFFERS is a
+        // contract violation — the append-only log is not mutated (first-admitted
+        // value is authoritative); we record an audited `payload_conflict`.
+        const dup = await client.query<{
+          quantity_micros: string;
+          customer_id: string;
+          metric: string;
+          event_time_ms: string;
+        }>(
+          "SELECT quantity_micros, customer_id, metric, event_time_ms FROM event_log WHERE event_id = $1",
           [ev.eventId],
         );
-        if ((dup.rowCount ?? 0) > 0) {
+        if (dup.rows.length > 0) {
+          const row = dup.rows[0]!;
+          if (row.quantity_micros !== micros.toString()) {
+            const cspec = windowForEvent(row.customer_id, row.metric, Number(row.event_time_ms), this.windowMs);
+            await client.query(
+              `INSERT INTO correction_epoch
+                 (correction_id, window_key, event_id, customer_id, metric, quantity, quantity_micros, event_time_ms, quarantined_at_ms, reason)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'payload_conflict')
+               ON CONFLICT (event_id) DO NOTHING`,
+              [uuidv7(), cspec.windowKey, ev.eventId, row.customer_id, row.metric, quantityStr, micros.toString(), Number(row.event_time_ms), ingestTimeMs],
+            );
+          }
           deduped++;
           dispositions.push({ eventId: ev.eventId, disposition: "deduped" });
           continue;
@@ -277,14 +296,36 @@ export class AuroraMeteringEngine implements MeteringEngine {
     await this.writer.query("TRUNCATE correction_epoch, event_log, billing_window, stream_watermark");
   }
 
+  /**
+   * Scoped delete of specific customers' rows — used by the in-app replay proof
+   * to clean up its isolated namespace without touching the live timeline.
+   */
+  async purgeCustomers(customerIds: string[]): Promise<void> {
+    if (customerIds.length === 0) return;
+    const client = await this.writer.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("DELETE FROM correction_epoch WHERE customer_id = ANY($1::uuid[])", [customerIds]);
+      await client.query("DELETE FROM event_log WHERE customer_id = ANY($1::uuid[])", [customerIds]);
+      await client.query("DELETE FROM billing_window WHERE customer_id = ANY($1::uuid[])", [customerIds]);
+      await client.query("DELETE FROM stream_watermark WHERE customer_id = ANY($1::uuid[])", [customerIds]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async close(): Promise<void> {
     await Promise.all([this.writer.end(), this.reader.end()]);
   }
 }
 
-type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
+export type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
 
-function sslFor(url: string | undefined, caCert?: string): SslConfig {
+export function sslFor(url: string | undefined, caCert?: string): SslConfig {
   // Aurora requires TLS.
   if (!url || !/sslmode=(require|verify-ca|verify-full)/.test(url)) return false;
   // If a CA bundle is configured, pin it and verify the chain (production).

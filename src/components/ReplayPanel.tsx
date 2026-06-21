@@ -6,7 +6,9 @@ export function ReplayPanel({ replay, running }: { replay: ReplayView | null; ru
     <section className={styles.panel}>
       <div className={styles.panelHead}>
         <span className={styles.panelTitle}>Replay — same set, 3 arrival orders</span>
-        <span className={styles.panelHint}>byte-identical or it&apos;s a bug</span>
+        <span className={styles.panelHint}>
+          {replay ? `computed on ${replay.backend}` : "byte-identical or it's a bug"}
+        </span>
       </div>
       <div className={styles.panelBody}>
         {!replay && !running && (

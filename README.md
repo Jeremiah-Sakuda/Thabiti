@@ -37,14 +37,22 @@ backends (in-memory and Aurora) for any seed:
    restart, re-ingest from the durable append-only log → the recovered total is
    bit-identical to the deterministic projection.
 
-**What the guarantee precisely says.** Determinism is *watermark-bounded*: the
-billed total is a pure function of the **admitted event set**, evaluated under
-the canonical total order. The determinism-critical paths therefore seal at the
-end of the admitted set — the watermark's allowed-lateness bound defines what is
-admitted vs. quarantined. (Sealing a window mid-flood and *then* delivering a
-genuinely in-window event beyond the lateness bound correctly quarantines it;
-that is the immutability guarantee at work, not a contradiction of it. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#why-seal-at-end-on-the-determinism-paths).)
+**What the guarantee precisely says.** Determinism is *watermark-bounded* and
+holds under two explicit, industry-standard preconditions:
+
+1. **Seal-at-end.** The billed total is a pure function of the **admitted event
+   set** under the canonical total order; the determinism-critical paths seal at
+   the end of the admitted set. (Sealing mid-flood and *then* delivering a
+   genuinely in-window event beyond the lateness bound correctly quarantines it —
+   that is the immutability guarantee at work, not a contradiction.)
+2. **Idempotent re-delivery.** `event_id` is an idempotency key: deliveries of
+   the same id must carry the same billable payload. The append-only log is never
+   mutated, so the first-admitted value is authoritative. A re-delivery whose
+   quantity *differs* is a contract violation — it is **detected and recorded as
+   an audited `payload_conflict`**, never silently merged, so the total stays
+   reproducible instead of becoming arrival-order-dependent.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#why-seal-at-end-on-the-determinism-paths).
 
 Deduplication and idempotency exist here as **plumbing** — necessary, never the
 headline. The headline is temporal determinism and window sealing.

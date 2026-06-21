@@ -142,6 +142,36 @@ export function runInvariantSuite(ctx: SuiteContext): void {
       expect(t2).toEqual(t1);
     });
 
+    it("idempotency contract: a conflicting re-delivery (same id, different payload) is detected, audited, and never moves the total", async () => {
+      const D = ctx.windowMs;
+      const base = alignedBase(D);
+      const customerId = "00000000-0000-7000-8000-0000000000c1";
+      const metric = "api_calls";
+      const w = windowForEvent(customerId, metric, base, D).windowKey;
+      const ev: UsageEvent = {
+        eventId: "00000000-0000-7000-8000-0000000000e1",
+        customerId,
+        metric,
+        quantity: 100,
+        eventTime: base + 1,
+      };
+
+      await engine.ingest([ev]);
+      const before = await engine.windowTotal(w);
+      expect(before.billedTotal).toBe(formatMicros(100_000_000n));
+
+      // Same id, DIFFERENT quantity — a contract violation, not a valid update.
+      const res = await engine.ingest([{ ...ev, quantity: 999 }]);
+      expect(res.accepted).toBe(0);
+      expect(res.deduped).toBe(1); // not merged
+
+      const after = await engine.windowTotal(w);
+      expect(after.billedTotal).toBe(before.billedTotal); // first-admitted value is authoritative
+
+      const corr = await engine.corrections(w);
+      expect(corr.some((c) => c.eventId === ev.eventId && c.reason === "payload_conflict")).toBe(true);
+    });
+
     it("audit fidelity: re-delivering an already-billed event after seal is a dedup, not a quarantine", async () => {
       const scenario = buildScenario({ seed: 8, windowMs: ctx.windowMs, windowCount: 3 });
       await engine.ingest(scenario.events); // all admitted (seal-at-end)
