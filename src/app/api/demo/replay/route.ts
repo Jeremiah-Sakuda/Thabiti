@@ -1,7 +1,7 @@
 import { getConfig } from "@/lib/config";
 import { MemoryMeteringEngine } from "@/lib/engine";
 import { arrivalOrder, buildScenario, scenarioWindowKeys } from "@/harness/generator";
-import { jsonError } from "../../_lib";
+import { jsonError, requireApiKey } from "../../_lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
  * this is computed in-process for an instant, repeatable proof.
  */
 export async function POST(req: Request): Promise<Response> {
+  const unauthorized = requireApiKey(req);
+  if (unauthorized) return unauthorized;
   try {
     const body = (await req.json().catch(() => ({}))) as { seed?: number; orders?: number };
     const cfg = getConfig();

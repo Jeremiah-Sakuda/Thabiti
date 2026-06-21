@@ -7,10 +7,15 @@ export type { AcuView, EnrichedWindow, StateView } from "../lib/api-types";
 
 export const BASE_URL = process.env.THABITI_BASE_URL ?? "http://localhost:3000";
 
+function authHeaders(): Record<string, string> {
+  const key = process.env.THABITI_API_KEY;
+  return key ? { "x-api-key": key } : {};
+}
+
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE_URL + path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`POST ${path} → ${res.status}: ${await res.text()}`);

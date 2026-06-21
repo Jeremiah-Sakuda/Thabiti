@@ -14,6 +14,7 @@ export async function createEngine(cfg: ThabitiConfig = getConfig()): Promise<Me
       readerUrl: cfg.aurora.readerUrl,
       latenessGraceMs: cfg.latenessGraceMs,
       windowMs: cfg.windowMs,
+      caCert: cfg.aurora.caCert,
     });
     await engine.init(); // idempotent schema apply on cold start
     return engine;

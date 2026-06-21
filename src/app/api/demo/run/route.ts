@@ -4,7 +4,7 @@ import { getEngine } from "@/lib/engine";
 import type { UsageEvent } from "@/lib/engine/types";
 import { uuidv7 } from "@/lib/uuidv7";
 import { arrivalOrder, buildScenario, scenarioWindowKeys } from "@/harness/generator";
-import { jsonError } from "../../_lib";
+import { jsonError, requireApiKey } from "../../_lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
  * a late straggler into a sealed window to show it quarantined.
  */
 export async function POST(req: Request): Promise<Response> {
+  const unauthorized = requireApiKey(req);
+  if (unauthorized) return unauthorized;
   try {
     const body = (await req.json().catch(() => ({}))) as { seed?: number; includeStraggler?: boolean };
     const cfg = getConfig();

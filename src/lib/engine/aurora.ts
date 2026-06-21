@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+
 import { Pool } from "pg";
 
 import { formatMicros, parseMicros } from "../decimal";
@@ -28,6 +30,8 @@ export interface AuroraEngineOptions {
   readerUrl: string | undefined;
   latenessGraceMs: number;
   windowMs: number;
+  /** RDS CA bundle (PEM or file path) to pin TLS. Falls back to trust-all. */
+  caCert?: string | undefined;
 }
 
 /**
@@ -54,11 +58,12 @@ export class AuroraMeteringEngine implements MeteringEngine {
     }
     this.latenessGraceMs = opts.latenessGraceMs;
     this.windowMs = opts.windowMs;
-    this.writer = new Pool({ connectionString: opts.writerUrl, max: 10, ssl: sslFor(opts.writerUrl) });
+    const ssl = sslFor(opts.writerUrl, opts.caCert);
+    this.writer = new Pool({ connectionString: opts.writerUrl, max: 10, ssl });
     this.reader = new Pool({
       connectionString: opts.readerUrl ?? opts.writerUrl,
       max: 10,
-      ssl: sslFor(opts.readerUrl ?? opts.writerUrl),
+      ssl: sslFor(opts.readerUrl ?? opts.writerUrl, opts.caCert),
     });
   }
 
@@ -166,25 +171,41 @@ export class AuroraMeteringEngine implements MeteringEngine {
   }
 
   async windowTotal(windowKey: string): Promise<WindowTotal> {
-    // Heavy aggregation + metadata read both run on the READER endpoint.
-    const meta = await this.reader.query<{ state: string; sealed_watermark_ms: string | null }>(
-      "SELECT state, sealed_watermark_ms FROM billing_window WHERE window_key = $1",
-      [windowKey],
-    );
-    if (meta.rows.length === 0) {
-      return { windowKey, billedTotal: formatMicros(0n), billedTotalMicros: "0", sealed: false, sealedWatermark: null, eventCount: 0 };
+    // The window metadata read and the heavy aggregation run inside ONE
+    // read-only REPEATABLE READ transaction on the READER endpoint, so both
+    // observe a single MVCC snapshot — making "single-snapshot total order"
+    // literally true, not two independent autocommit snapshots.
+    const client = await this.reader.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY");
+      const meta = await client.query<{ state: string; sealed_watermark_ms: string | null }>(
+        "SELECT state, sealed_watermark_ms FROM billing_window WHERE window_key = $1",
+        [windowKey],
+      );
+      if (meta.rows.length === 0) {
+        await client.query("COMMIT");
+        return { windowKey, billedTotal: formatMicros(0n), billedTotalMicros: "0", sealed: false, sealedWatermark: null, eventCount: 0 };
+      }
+      const agg = await client.query<{ billed_total_micros: string; event_count: number }>(AGGREGATE_SQL, [windowKey]);
+      await client.query("COMMIT");
+
+      const micros = BigInt(agg.rows[0]?.billed_total_micros ?? "0");
+      const sealedWatermark = meta.rows[0]!.sealed_watermark_ms;
+      return {
+        windowKey,
+        billedTotal: formatMicros(micros),
+        billedTotalMicros: micros.toString(),
+        sealed: meta.rows[0]!.state === "sealed",
+        sealedWatermark: sealedWatermark === null ? null : Number(sealedWatermark),
+        eventCount: agg.rows[0]?.event_count ?? 0,
+      };
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
-    const agg = await this.reader.query<{ billed_total_micros: string; event_count: number }>(AGGREGATE_SQL, [windowKey]);
-    const micros = BigInt(agg.rows[0]?.billed_total_micros ?? "0");
-    const sealedWatermark = meta.rows[0]!.sealed_watermark_ms;
-    return {
-      windowKey,
-      billedTotal: formatMicros(micros),
-      billedTotalMicros: micros.toString(),
-      sealed: meta.rows[0]!.state === "sealed",
-      sealedWatermark: sealedWatermark === null ? null : Number(sealedWatermark),
-      eventCount: agg.rows[0]?.event_count ?? 0,
-    };
   }
 
   async corrections(windowKey: string): Promise<CorrectionRecord[]> {
@@ -261,13 +282,22 @@ export class AuroraMeteringEngine implements MeteringEngine {
   }
 }
 
-function sslFor(url: string | undefined): false | { rejectUnauthorized: boolean } {
-  // Aurora requires TLS. For the demo we accept the RDS-managed cert; production
-  // should pin the RDS CA bundle (see docs/AURORA_SETUP.md).
-  if (url && /sslmode=(require|verify-ca|verify-full)/.test(url)) {
-    return { rejectUnauthorized: false };
+type SslConfig = false | { rejectUnauthorized: boolean; ca?: string };
+
+function sslFor(url: string | undefined, caCert?: string): SslConfig {
+  // Aurora requires TLS.
+  if (!url || !/sslmode=(require|verify-ca|verify-full)/.test(url)) return false;
+  // If a CA bundle is configured, pin it and verify the chain (production).
+  if (caCert) {
+    const ca = caCert.includes("BEGIN CERTIFICATE")
+      ? caCert // inline PEM
+      : existsSync(caCert)
+        ? readFileSync(caCert, "utf8") // file path
+        : caCert;
+    return { rejectUnauthorized: true, ca };
   }
-  return false;
+  // Otherwise accept the RDS-managed cert (demo only). Set AURORA_CA_CERT to pin.
+  return { rejectUnauthorized: false };
 }
 
 function validate(raw: UsageEvent): UsageEvent {

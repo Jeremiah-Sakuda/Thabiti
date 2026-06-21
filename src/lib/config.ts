@@ -7,6 +7,8 @@ export interface AuroraConfig {
   /** DBInstanceIdentifiers for CloudWatch ServerlessDatabaseCapacity (optional). */
   writerInstanceId: string | undefined;
   readerInstanceId: string | undefined;
+  /** RDS CA bundle (PEM string or file path) to pin TLS instead of trust-all. */
+  caCert: string | undefined;
   region: string;
   acuHourUsd: number;
   /** Serverless v2 ACU bounds (for the simulated graph + cost framing). */
@@ -50,6 +52,7 @@ export function getConfig(): ThabitiConfig {
       clusterId: process.env.AURORA_CLUSTER_ID ?? "thabiti-cluster",
       writerInstanceId: process.env.AURORA_WRITER_INSTANCE_ID,
       readerInstanceId: process.env.AURORA_READER_INSTANCE_ID,
+      caCert: process.env.AURORA_CA_CERT,
       region: process.env.AWS_REGION ?? "us-east-1",
       acuHourUsd: num(process.env.AURORA_ACU_HOUR_USD, 0.12),
       minAcu: num(process.env.AURORA_MIN_ACU, 0),

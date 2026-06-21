@@ -48,9 +48,14 @@ AURORA_MAX_ACU=16
 ```
 
 TLS note: the engine accepts the RDS-managed certificate for the demo. For
-production, pin the [RDS CA bundle](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html)
-instead of `rejectUnauthorized: false` (see `sslFor` in
+production, set `AURORA_CA_CERT` to the [RDS CA bundle](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html)
+(PEM contents or a file path) — the engine then verifies the chain
+(`rejectUnauthorized: true`) instead of trusting all (see `sslFor` in
 [`src/lib/engine/aurora.ts`](../src/lib/engine/aurora.ts)).
+
+Hardening note: set `THABITI_API_KEY` to require an `x-api-key` header on the
+mutating routes (ingest/seal/reset/demo), and `THABITI_MAX_BATCH` to cap ingest
+batch size. Both are off/limit-only by default so the demo runs unauthenticated.
 
 ## 4. Apply the schema & verify
 
