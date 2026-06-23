@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname } from "node:path";
 
 import { formatMicros, parseMicros } from "../decimal";
-import { aggregateBilledTotal } from "./determinism";
+import { aggregateForMode, aggregationMode } from "./determinism";
 import type { MeteringEngine } from "./engine";
 import type {
   BillingWindow,
@@ -179,6 +179,8 @@ export class MemoryMeteringEngine implements MeteringEngine {
   async windowTotal(windowKey: string): Promise<WindowTotal> {
     const w = this.windowMap.get(windowKey);
     if (!w) {
+      // Derive mode from the window key's metric segment for an empty window.
+      const metric = windowKey.split(":")[1] ?? "";
       return {
         windowKey,
         billedTotal: formatMicros(0n),
@@ -186,9 +188,11 @@ export class MemoryMeteringEngine implements MeteringEngine {
         sealed: false,
         sealedWatermark: null,
         eventCount: 0,
+        mode: aggregationMode(metric),
       };
     }
-    const { micros, eventCount } = aggregateBilledTotal(this.log.values(), w);
+    const mode = aggregationMode(w.metric);
+    const { micros, eventCount } = aggregateForMode(this.log.values(), w, mode);
     return {
       windowKey,
       billedTotal: formatMicros(micros),
@@ -196,6 +200,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
       sealed: w.state === "sealed",
       sealedWatermark: w.sealedWatermark,
       eventCount,
+      mode,
     };
   }
 

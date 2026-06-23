@@ -77,6 +77,8 @@ export interface WindowTotal {
   sealedWatermark: number | null;
   /** Number of admitted events that participate in the total. */
   eventCount: number;
+  /** How the metric is billed: "counter" (sum) or "gauge" (last-write-wins). */
+  mode: "counter" | "gauge";
 }
 
 export interface CorrectionRecord {

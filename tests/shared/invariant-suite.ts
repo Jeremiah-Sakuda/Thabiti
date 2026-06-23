@@ -209,5 +209,59 @@ export function runInvariantSuite(ctx: SuiteContext): void {
 
       expect(t2).toEqual(t1);
     });
+
+    it("order-sensitive gauge: last-write-wins is deterministic via the event_id tiebreaker", async () => {
+      // A gauge metric is billed as its LATEST value by the total order. Two
+      // events at the SAME event_time make the event_id tiebreaker load-bearing:
+      // without it, "latest" is arrival-order-dependent. With it, the value is
+      // deterministic = the quantity of the greatest (event_time, event_id) row.
+      const D = ctx.windowMs;
+      const base = alignedBase(D);
+      const customerId = "00000000-0000-7000-8000-000000000c01";
+      const metric = "active_seats"; // a gauge
+      const w = windowForEvent(customerId, metric, base, D).windowKey;
+
+      const earliest = { eventId: "00000000-0000-7000-8000-00000000aa00", customerId, metric, quantity: 999, eventTime: base + 1000 };
+      const tieLoId = { eventId: "00000000-0000-7000-8000-00000000aaaa", customerId, metric, quantity: 11, eventTime: base + 8000 };
+      const tieHiId = { eventId: "00000000-0000-7000-8000-00000000ffff", customerId, metric, quantity: 22, eventTime: base + 8000 };
+      // Latest by total order = max(event_time) then max(event_id) = tieHiId → 22.
+
+      const a = await ctx.makeEngine();
+      await a.ingest([earliest, tieLoId, tieHiId]);
+      const ta = await a.windowTotal(w);
+      await a.close();
+
+      const b = await ctx.makeEngine();
+      await b.ingest([tieHiId, earliest, tieLoId]); // different arrival order
+      const tb = await b.windowTotal(w);
+      await b.close();
+
+      expect(ta.mode).toBe("gauge");
+      expect(ta.billedTotal).toBe(formatMicros(22_000_000n)); // the higher event_id at the tied time wins
+      expect(tb.billedTotal).toBe(ta.billedTotal); // order-invariant — because of the tiebreaker
+      expect(ta.billedTotal).not.toBe(formatMicros(1_032_000_000n)); // genuinely a gauge, not the SUM (999+11+22)
+    });
+
+    it("concurrent ingest: maximal ON CONFLICT contention converges to the serial total", async () => {
+      // Fire N concurrent ingests of the SAME full set — every event races every
+      // other delivery of itself. Idempotent dedup (ON CONFLICT) + the monotonic
+      // GREATEST watermark UPSERT must converge to exactly the single-ingest total.
+      const scenario = buildScenario({ seed: 13, windowMs: ctx.windowMs, windowCount: 2 });
+      const keys = scenarioWindowKeys(scenario);
+
+      const concurrentEngine = await ctx.makeEngine();
+      await Promise.all(Array.from({ length: 6 }, () => concurrentEngine.ingest(scenario.events)));
+      await concurrentEngine.sealDueWindows();
+      const concurrent = await totalsFor(concurrentEngine, keys);
+      await concurrentEngine.close();
+
+      const serialEngine = await ctx.makeEngine();
+      await serialEngine.ingest(scenario.events);
+      await serialEngine.sealDueWindows();
+      const serial = await totalsFor(serialEngine, keys);
+      await serialEngine.close();
+
+      expect(concurrent).toEqual(serial); // contention did not corrupt or double-count
+    });
   });
 }

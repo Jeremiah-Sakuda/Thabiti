@@ -44,3 +44,21 @@ If this is a long-running test, pass a timeout value as the last argument or con
    Start at  11:41:13
    Duration  120.02s (transform 45ms, setup 0ms, import 69ms, tests 119.89s, environment 0ms)
 
+
+=== order-sensitive gauge (last-write-wins) on live Aurora ===
+Proves the total order is load-bearing: two events at the same event_time
+resolve deterministically by the event_id tiebreaker (AGGREGATE_GAUGE_SQL),
+byte-identical to the in-memory engine.
+Captured: 2026-06-23T23:55:04Z
+ Test Files  1 passed (1)
+      Tests  1 passed | 7 skipped (8)
+   Duration  7.25s (transform 50ms, setup 0ms, import 79ms, tests 7.11s, environment 0ms)
+
+=== concurrency safety on live Aurora ===
+6 genuinely-parallel transactions ingest the same 720-event set under
+maximal ON CONFLICT contention; the monotonic GREATEST watermark UPSERT +
+idempotent dedup converge to exactly the single-ingest total.
+Captured: 2026-06-23T23:57:49Z
+ Test Files  1 passed (1)
+      Tests  1 passed | 8 skipped (9)
+   Duration  24.55s (transform 51ms, setup 0ms, import 79ms, tests 24.41s, environment 0ms)

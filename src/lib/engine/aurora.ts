@@ -4,12 +4,14 @@ import { Pool } from "pg";
 
 import { formatMicros, parseMicros } from "../decimal";
 import {
+  AGGREGATE_GAUGE_SQL,
   AGGREGATE_SQL,
   SCHEMA_SQL,
   SEAL_DUE_SQL,
   UPSERT_WATERMARK_SQL,
 } from "../sql/statements";
 import { uuidv7 } from "../uuidv7";
+import { aggregationMode } from "./determinism";
 import type { MeteringEngine } from "./engine";
 import type {
   BillingWindow,
@@ -230,15 +232,18 @@ export class AuroraMeteringEngine implements MeteringEngine {
     try {
       await client.query("BEGIN");
       await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY");
-      const meta = await client.query<{ state: string; sealed_watermark_ms: string | null }>(
-        "SELECT state, sealed_watermark_ms FROM billing_window WHERE window_key = $1",
+      const meta = await client.query<{ state: string; sealed_watermark_ms: string | null; metric: string }>(
+        "SELECT state, sealed_watermark_ms, metric FROM billing_window WHERE window_key = $1",
         [windowKey],
       );
       if (meta.rows.length === 0) {
         await client.query("COMMIT");
-        return { windowKey, billedTotal: formatMicros(0n), billedTotalMicros: "0", sealed: false, sealedWatermark: null, eventCount: 0 };
+        const metric = windowKey.split(":")[1] ?? "";
+        return { windowKey, billedTotal: formatMicros(0n), billedTotalMicros: "0", sealed: false, sealedWatermark: null, eventCount: 0, mode: aggregationMode(metric) };
       }
-      const agg = await client.query<{ billed_total_micros: string; event_count: number }>(AGGREGATE_SQL, [windowKey]);
+      const mode = aggregationMode(meta.rows[0]!.metric);
+      const sql = mode === "gauge" ? AGGREGATE_GAUGE_SQL : AGGREGATE_SQL;
+      const agg = await client.query<{ billed_total_micros: string; event_count: number }>(sql, [windowKey]);
       await client.query("COMMIT");
 
       const micros = BigInt(agg.rows[0]?.billed_total_micros ?? "0");
@@ -250,6 +255,7 @@ export class AuroraMeteringEngine implements MeteringEngine {
         sealed: meta.rows[0]!.state === "sealed",
         sealedWatermark: sealedWatermark === null ? null : Number(sealedWatermark),
         eventCount: agg.rows[0]?.event_count ?? 0,
+        mode,
       };
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});

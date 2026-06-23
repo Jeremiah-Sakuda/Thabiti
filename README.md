@@ -66,9 +66,11 @@ One seeded, scripted run drives four beats (`npm run harness`):
 2. **The seal** — a window seals on screen as the watermark advances; a late
    event lands inside it and is **quarantined**, not merged. The sealed total is
    unchanged.
-3. **The crash** — the ingester is hard-killed mid-flood; on restart the invoice
-   recovers **bit-identical**, and the same set replayed in three arrival orders
-   yields the same total, side by side.
+3. **The crash** — the ingester is hard-killed mid-flood (`kill -9`); on restart
+   it resumes from the durable append-only log and the invoice recovers
+   **bit-identical** (replay-convergence by idempotency; literal no-re-ingest WAL
+   recovery is covered by `tests/memory.wal.test.ts`). The same set replayed in
+   three arrival orders yields the same total, side by side.
 4. **The collapse** — the flood ends; writer and reader ACU collapse to ~0 and
    the run's **cost** is shown, derived from ACU-seconds × the published Aurora
    ACU-hour price. (ACU/cost is a *labeled simulation* by default; only the
@@ -183,7 +185,16 @@ exact `bigint` micro-units, so totals are associative and match
 is guarded two ways: `tests/sql-drift.test.ts` pins the SQL text byte-for-byte to
 the canonical strings the engine executes, and the memory↔aurora parity test
 asserts identical totals for the same seed **when `AURORA_WRITER_URL` is set**
-(it skips otherwise, so run it against a cluster to see it green).
+(captured green in [docs/evidence/](docs/evidence/)).
+
+**The total order is load-bearing, not ceremony.** Counters are billed as a `SUM`
+(order-independent in value), but metrics can also be billed as **gauges** —
+last-write-wins, the value of the greatest `(event_time, event_id)` row
+([aggregate-gauge.sql](src/lib/sql/aggregate-gauge.sql)). For a gauge, the
+`event_id` tiebreaker is *required*: two events sharing an `event_time` would
+otherwise resolve nondeterministically. A property test deliberately constructs
+that tie and asserts the billed value is arrival-order-invariant — it fails
+without the tiebreaker. Same rule, same byte-parity, on both backends.
 
 ## Backends
 

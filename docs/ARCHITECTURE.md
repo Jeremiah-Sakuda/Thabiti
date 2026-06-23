@@ -59,11 +59,15 @@ mutation. (Full DDL: [`src/lib/sql/schema.sql`](../src/lib/sql/schema.sql).)
 4. **Late-event quarantine.** An event whose event-time falls inside an
    already-sealed window is **not merged** — it is written to the correction
    epoch (visible, audited, attributable). The sealed number never moves.
-5. **Deterministic aggregation.** The billed total is one window-function
+5. **Deterministic aggregation.** The billed value is one window-function
    aggregation over the log, scoped to the window and bounded by the sealed
    watermark, under the total order `(event_time_ms, event_id)`. Because the
    order is total and the inputs are append-only, the output is byte-identical
-   across any number of replays and any arrival order.
+   across any number of replays and any arrival order. Two modes ship over that
+   order: **counter** (`SUM`, [aggregate.sql](../src/lib/sql/aggregate.sql)) and
+   **gauge** (last-write-wins, [aggregate-gauge.sql](../src/lib/sql/aggregate-gauge.sql)).
+   For a gauge the `event_id` tiebreaker is strictly load-bearing — it makes "the
+   latest value" deterministic when two events share an `event_time`.
 6. **Crash-replay.** Re-ingesting the same set in any order yields the identical
    total: ingest is idempotent, sealing is deterministic on the watermark, and
    the aggregate is a pure function of the sealed log under the total order.
