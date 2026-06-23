@@ -59,15 +59,26 @@ export class AuroraMeteringEngine implements MeteringEngine {
     this.latenessGraceMs = opts.latenessGraceMs;
     this.windowMs = opts.windowMs;
     const readerUrl = opts.readerUrl ?? opts.writerUrl;
+    // Modest pools + TCP keepalive: serverless functions are short-lived and the
+    // Serverless v2 cluster scales to low ACU when idle, so a small pool avoids
+    // connection storms; keepalive prevents idle sockets from going stale across
+    // a scale event. Generous connect timeout tolerates a scale-from-0 resume.
+    const poolOpts = {
+      max: 5,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
+      connectionTimeoutMillis: 30_000,
+      idleTimeoutMillis: 10_000,
+    } as const;
     this.writer = new Pool({
       connectionString: pgConnString(opts.writerUrl),
-      max: 10,
       ssl: sslFor(opts.writerUrl, opts.caCert),
+      ...poolOpts,
     });
     this.reader = new Pool({
       connectionString: pgConnString(readerUrl),
-      max: 10,
       ssl: sslFor(readerUrl, opts.caCert),
+      ...poolOpts,
     });
   }
 

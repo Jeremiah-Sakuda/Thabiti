@@ -1,0 +1,17 @@
+Thabiti — live Aurora determinism proof (db:check)
+Cluster: Aurora PostgreSQL Serverless v2, us-west-2 (writer + cluster-ro reader)
+Command: THABITI_BACKEND=aurora npm run db:check
+Captured: 2026-06-23T16:26:00Z
+----------------------------------------------------------------------
+
+> thabiti@0.1.0 db:check
+> tsx src/scripts/check-determinism.ts
+
+backend = aurora
+scenario: 1440 unique events across 36 windows
+
+order #1: delivered 1659 (accepted 1440, deduped 219), Σ = 709590.000000
+order #2: delivered 1662 (accepted 1440, deduped 222), Σ = 709590.000000
+order #3: delivered 1632 (accepted 1440, deduped 192), Σ = 709590.000000
+
+✓ byte-identical across all three arrival orders

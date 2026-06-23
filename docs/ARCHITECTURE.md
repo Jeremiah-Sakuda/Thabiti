@@ -13,14 +13,16 @@ hostile firehose                Vercel (pdx1, us-west-2)            Amazon Auror
 duplicates                 ┌─> POST /api/ingest  ──── writes ──┐
 out-of-order      ───────> │                                   ├─> RDS Proxy ─> WRITER endpoint ─┐
 clock skew                 │   GET  /api/.../total ─ reads ─────┘                                 │  shared
-late stragglers            └─> GET  /api/state    ─ reads ─────────> RDS Proxy ─> READER (Opt.   ─┤  MVCC log
-                                                                      Reads) endpoint              │  event_log
+late stragglers            └─> GET  /api/state    ─ reads ─────────> RDS Proxy ─> READER          ─┤  MVCC log
+                                                                      endpoint                     │  event_log
                                                                                                    ┘ (append-only)
 ```
 
 - **Writer endpoint** absorbs append-only inserts under load.
-- **Optimized-Reads reader endpoint** runs the heavy window-function aggregation,
-  isolated from write pressure. Writer and reader scale independently.
+- **Reader endpoint** runs the window-function aggregation, isolated from write
+  pressure. Writer and reader scale independently. (Aurora Optimized Reads can be
+  enabled on the reader; the current query is a single indexed range scan, so the
+  writer/reader *split* — not Optimized Reads specifically — is load-bearing.)
 - Both endpoints sit over **one MVCC-snapshot-consistent storage layer**, so the
   aggregation reads a single consistent snapshot of the log.
 - **RDS Proxy** pools connections so serverless functions never storm Postgres.

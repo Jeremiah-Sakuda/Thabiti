@@ -46,7 +46,7 @@
   <!-- Reader -->
   <rect x="760" y="280" width="250" height="90" rx="10" fill="#11151f" stroke="#c084fc" stroke-width="1.5"/>
   <text x="885" y="310" fill="#c084fc" font-size="13" font-weight="600" text-anchor="middle">Aurora Serverless v2 · READER</text>
-  <text x="885" y="332" fill="#c2cad8" font-size="11" text-anchor="middle">Optimized Reads · window-fn aggregation</text>
+  <text x="885" y="332" fill="#c2cad8" font-size="11" text-anchor="middle">isolated reader · window-fn aggregation</text>
   <text x="885" y="350" fill="#5c6477" font-size="11" text-anchor="middle">independent ACU scaling · min ≈ 0</text>
 
   <!-- Shared storage -->

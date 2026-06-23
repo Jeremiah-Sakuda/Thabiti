@@ -12,8 +12,10 @@ and deploy to Vercel. Region throughout: **`us-west-2`**.
    when idle) and **Maximum ACU = 16** (burst ceiling). These power the
    spike-then-collapse and the cost-per-run story.
 3. Create the cluster with a **writer** instance.
-4. **Add a reader instance** to the cluster and enable **Optimized Reads** on it
-   (a reader instance class that supports it). The heavy aggregation runs here.
+4. **Add a reader instance** to the cluster — the aggregation runs here, isolated
+   from write pressure. (Optionally enable **Optimized Reads** on a supporting
+   instance class; the current single-range-scan query won't spill, so the
+   writer/reader split is what matters, not Optimized Reads specifically.)
 5. Note the **DBClusterIdentifier** and both **DBInstanceIdentifier**s (writer
    and reader) — used for CloudWatch ACU metrics.
 6. Create a database named `thabiti` and a login role.

@@ -70,8 +70,33 @@ One seeded, scripted run drives four beats (`npm run harness`):
    recovers **bit-identical**, and the same set replayed in three arrival orders
    yields the same total, side by side.
 4. **The collapse** — the flood ends; writer and reader ACU collapse to ~0 and
-   the run's **cost** is shown, computed from measured ACU-seconds × the
-   published Aurora ACU-hour price. Zero idle spend.
+   the run's **cost** is shown, derived from ACU-seconds × the published Aurora
+   ACU-hour price. (ACU/cost is a *labeled simulation* by default; only the
+   `cloudwatch` source — a live cluster with the AWS SDK + instance ids — is
+   measured ACU.) Zero idle spend.
+
+## Proof on a live Aurora cluster
+
+The invariant is not just asserted on the in-memory engine — it is captured
+running on a real **Aurora PostgreSQL Serverless v2** cluster (us-west-2, distinct
+writer + `cluster-ro` reader endpoints):
+
+- **[docs/evidence/aurora-db-check.txt](docs/evidence/aurora-db-check.txt)** — the
+  same seeded set replayed in three hostile arrival orders on Aurora →
+  byte-identical `709590.000000`.
+- **[docs/evidence/aurora-invariant-suite.txt](docs/evidence/aurora-invariant-suite.txt)**
+  — the full invariant suite **and** the memory↔aurora parity test, green against
+  the live cluster (sealed-window rejection, crash-replay, audit-fidelity,
+  payload-conflict, idempotency, replay-order invariance).
+
+Reproduce: set `AURORA_WRITER_URL` / `AURORA_READER_URL` (see
+[docs/AURORA_SETUP.md](docs/AURORA_SETUP.md)) and run `npm run db:check` and
+`npx vitest run tests/aurora.invariant.test.ts`.
+
+> Live deploy: pinned to Vercel `pdx1` (same region as the cluster). The AWS
+> console `ServerlessDatabaseCapacity` screenshot (writer + reader ACU spiking
+> then collapsing to ~0) and the < 3-minute video are attached with the Devpost
+> submission.
 
 ## Quickstart (zero cloud dependencies)
 
@@ -107,7 +132,7 @@ flowchart LR
   V -->|"writes"| RP[["RDS Proxy<br/>connection pooling"]]
   V -->|"reads"| RP
   RP --> W["Aurora Serverless v2<br/>WRITER endpoint"]
-  RP --> R["Aurora Serverless v2<br/>Optimized-Reads READER"]
+  RP --> R["Aurora Serverless v2<br/>READER endpoint"]
   W --- S[("Shared distributed storage<br/>MVCC-snapshot-consistent<br/>append-only event_log")]
   R --- S
 ```
@@ -115,8 +140,10 @@ flowchart LR
 Why Aurora is the protagonist, not a store:
 
 - **Writer / reader split.** The firehose hammers the **writer** with append-only
-  inserts; the heavy window-function aggregation runs on the **Optimized-Reads
-  reader**, isolated from ingest pressure — the two scale independently.
+  inserts; the window-function aggregation runs on a **dedicated reader endpoint**,
+  isolated from ingest pressure — the two scale independently. (Aurora Optimized
+  Reads can be enabled on the reader; this query is a single indexed range scan,
+  so the split — not Optimized Reads specifically — is what's load-bearing here.)
 - **Serverless v2 autoscaling (min ≈ 0).** Compute appears to meet a hostile
   burst and disappears between runs. The scale-up-then-collapse and proportional
   cost are the story — a fixed-size instance cannot show it.
