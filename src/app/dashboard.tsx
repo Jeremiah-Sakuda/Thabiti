@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AcuPanel } from "@/components/AcuPanel";
+import { GaugeBreaker } from "@/components/GaugeBreaker";
 import { QuarantineFeed } from "@/components/QuarantineFeed";
 import { ReplayPanel } from "@/components/ReplayPanel";
 import { SqlCard } from "@/components/SqlCard";
@@ -216,6 +217,7 @@ export function Dashboard() {
         </div>
         <div className={styles.col}>
           <ReplayPanel replay={replay} running={replayRunning} />
+          <GaugeBreaker />
           <SqlCard />
         </div>
       </div>

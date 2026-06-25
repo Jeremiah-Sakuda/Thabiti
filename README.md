@@ -196,6 +196,12 @@ otherwise resolve nondeterministically. A property test deliberately constructs
 that tie and asserts the billed value is arrival-order-invariant — it fails
 without the tiebreaker. Same rule, same byte-parity, on both backends.
 
+The dashboard makes this breakable on purpose: **"Pull the tiebreaker"** lets you
+flip the `event_id` tiebreaker OFF (a genuinely weakened `ORDER BY event_time_ms`
+comparator, labeled *diagnostic*) and replay all six arrival permutations — the
+billed gauge value flickers `22 / 11` (a real invoice becomes a coin flip); flip
+it back ON and every permutation locks to `22` again.
+
 ## Backends
 
 A single `MeteringEngine` interface, two implementations selected by one env var:

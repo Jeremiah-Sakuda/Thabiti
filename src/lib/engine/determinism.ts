@@ -47,7 +47,8 @@ export interface AggregateResult {
  *   2. if sealed, admit nothing past the sealed watermark
  *   3. sort by the total order (event_time, event_id)
  */
-function collectWindowed(log: Iterable<LoggedEvent>, window: BillingWindow): LoggedEvent[] {
+function filterWindowed(log: Iterable<LoggedEvent>, window: BillingWindow): LoggedEvent[] {
+  // Preserves the source iteration order (= arrival/admission order for the log).
   const windowed: LoggedEvent[] = [];
   for (const e of log) {
     if (e.customerId !== window.customerId) continue;
@@ -64,6 +65,11 @@ function collectWindowed(log: Iterable<LoggedEvent>, window: BillingWindow): Log
     }
     windowed.push(e);
   }
+  return windowed;
+}
+
+function collectWindowed(log: Iterable<LoggedEvent>, window: BillingWindow): LoggedEvent[] {
+  const windowed = filterWindowed(log, window);
   windowed.sort(compareTotalOrder);
   return windowed;
 }
@@ -92,6 +98,27 @@ export function aggregateGauge(
   if (windowed.length === 0) return { micros: 0n, eventCount: 0 };
   const last = windowed[windowed.length - 1]!; // greatest under the total order
   return { micros: last.quantityMicros, eventCount: windowed.length };
+}
+
+/**
+ * DIAGNOSTIC ONLY — the gauge value WITH THE event_id TIEBREAKER REMOVED: a
+ * stable sort by event_time alone, so events sharing an event_time resolve by
+ * arrival (iteration) order instead of by the total order. This is the genuinely
+ * weakened comparator the "Pull the Tiebreaker" demo toggles to: shuffle the
+ * tied events and the billed value flickers, because "the latest value" is no
+ * longer uniquely defined. NEVER used in billing — it exists to PROVE, by
+ * breaking it, that the event_id tiebreaker is load-bearing.
+ */
+export function aggregateGaugeWeakened(
+  log: Iterable<LoggedEvent>,
+  window: BillingWindow,
+): AggregateResult {
+  const windowed = filterWindowed(log, window); // arrival order preserved
+  // Stable sort by event_time only — ties keep their arrival order (Array.sort is
+  // stable), so the "last" row among a tied event_time depends on delivery order.
+  windowed.sort((a, b) => a.eventTime - b.eventTime);
+  if (windowed.length === 0) return { micros: 0n, eventCount: 0 };
+  return { micros: windowed[windowed.length - 1]!.quantityMicros, eventCount: windowed.length };
 }
 
 /** Aggregate a window by its metric's mode. */

@@ -70,3 +70,19 @@ export interface ReplayView {
   grandTotal: string;
   runs: { order: number; delivered: number; grandTotal: string }[];
 }
+
+/** "Pull the Tiebreaker" — gauge billed value across every arrival permutation,
+ * with the event_id tiebreaker ON (total order) or OFF (diagnostic). */
+export interface GaugeBreakerView {
+  dropTiebreaker: boolean;
+  metric: string;
+  /** The two events that share an event_time (the tie at the heart of it). */
+  tie: { eventTime: number; events: { eventId: string; quantity: string }[] };
+  /** The ORDER BY clause actually used for this run. */
+  orderBy: string;
+  runs: { order: number; arrival: string[]; value: string }[];
+  /** Distinct billed values observed across all permutations. */
+  distinct: string[];
+  /** True when every permutation produced the same value (locked, not a coin flip). */
+  stable: boolean;
+}
