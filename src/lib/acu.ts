@@ -11,11 +11,12 @@ import { getConfig, type ThabitiConfig } from "./config";
  *    when the AWS SDK + instance ids + creds are present (`source: "cloudwatch"`),
  *    otherwise the same activity-driven estimate (`source: "estimated"`).
  *
- * Independent writer/reader scaling over one shared, snapshot-consistent log —
- * and the collapse to ~0 — is the Aurora-integration story behind the Best
- * Technical Implementation prize. NOTE: on the memory backend (and the aurora
- * backend without the AWS SDK + instance ids) these numbers are a labeled
- * simulation; only `source: "cloudwatch"` is measured ACU.
+ * Independent writer/reader ACU scaling over one shared, snapshot-consistent log
+ * — and the collapse to ~0 when idle — is the core Aurora-integration story:
+ * elastic compute that meets a hostile burst and then bills near-zero. NOTE: on
+ * the memory backend (and the aurora backend without the AWS SDK + instance ids)
+ * these numbers are a labeled simulation; only `source: "cloudwatch"` is
+ * measured ACU.
  */
 
 export type AcuSource = "simulated" | "cloudwatch" | "estimated";
