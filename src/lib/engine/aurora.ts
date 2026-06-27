@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 
 import { formatMicros, parseMicros } from "../decimal";
 import {
@@ -12,6 +12,13 @@ import {
 } from "../sql/statements";
 import { uuidv7 } from "../uuidv7";
 import { aggregationMode } from "./determinism";
+import {
+  buildReceipt,
+  toSerializedLeaves,
+  type AuditBundle,
+  type ReceiptLeaf,
+  type WindowReceipt,
+} from "./receipt";
 import type { MeteringEngine } from "./engine";
 import type {
   BillingWindow,
@@ -219,8 +226,129 @@ export class AuroraMeteringEngine implements MeteringEngine {
   }
 
   async sealDueWindows(now: number = Date.now()): Promise<SealResult> {
-    const res = await this.writer.query<{ window_key: string }>(SEAL_DUE_SQL, [now]);
-    return { newlySealed: res.rows.map((r) => r.window_key), windows: await this.windows() };
+    // Seal due windows AND commit each window's verifiable receipt in ONE
+    // transaction, so the Merkle root is atomic with the seal and cannot be
+    // backdated. (Additive to the seal — the aggregation SQL is untouched.)
+    const client = await this.writer.connect();
+    let newlySealed: string[] = [];
+    try {
+      await client.query("BEGIN");
+      const sealed = await client.query<{ window_key: string }>(SEAL_DUE_SQL, [now]);
+      newlySealed = sealed.rows.map((r) => r.window_key);
+
+      for (const windowKey of newlySealed) {
+        const meta = await client.query<{
+          customer_id: string;
+          metric: string;
+          window_open_ms: string;
+          window_close_ms: string;
+          sealed_watermark_ms: string;
+        }>(
+          "SELECT customer_id, metric, window_open_ms, window_close_ms, sealed_watermark_ms FROM billing_window WHERE window_key = $1",
+          [windowKey],
+        );
+        const m = meta.rows[0]!;
+        const leaves = await this.readLeaves(client, windowKey);
+        const receipt = buildReceipt({
+          windowKey,
+          customerId: m.customer_id,
+          metric: m.metric,
+          sealedWatermark: Number(m.sealed_watermark_ms),
+          leaves,
+          createdAtMs: now,
+        });
+        await client.query(
+          `INSERT INTO window_receipt
+             (window_key, merkle_root, signature, billed_total_micros, event_count, sealed_watermark_ms, leaf_order_rule, algo, created_at_ms)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (window_key) DO NOTHING`,
+          [
+            windowKey,
+            receipt.merkleRoot,
+            receipt.signature,
+            receipt.billedTotalMicros,
+            receipt.eventCount,
+            receipt.sealedWatermark,
+            receipt.leafOrderRule,
+            receipt.algo,
+            receipt.createdAtMs,
+          ],
+        );
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    return { newlySealed, windows: await this.windows() };
+  }
+
+  /** Read a window's admitted events in canonical total order (receipt leaves). */
+  private async readLeaves(client: PoolClient, windowKey: string): Promise<ReceiptLeaf[]> {
+    const res = await client.query<{ event_id: string; event_time_ms: string; quantity_micros: string }>(
+      `SELECT e.event_id, e.event_time_ms, e.quantity_micros
+       FROM event_log e
+       JOIN billing_window w ON w.customer_id = e.customer_id AND w.metric = e.metric
+         AND e.event_time_ms >= w.window_open_ms AND e.event_time_ms < w.window_close_ms
+       WHERE w.window_key = $1
+         AND (w.state <> 'sealed' OR w.sealed_watermark_ms IS NULL OR e.event_time_ms <= w.sealed_watermark_ms)
+       ORDER BY e.event_time_ms, e.event_id`,
+      [windowKey],
+    );
+    return res.rows.map((r) => ({
+      eventId: r.event_id,
+      eventTimeMs: Number(r.event_time_ms),
+      quantityMicros: BigInt(r.quantity_micros),
+    }));
+  }
+
+  async receiptBundle(windowKey: string): Promise<AuditBundle | null> {
+    const r = await this.reader.query<{
+      window_key: string;
+      merkle_root: string;
+      signature: string;
+      billed_total_micros: string;
+      event_count: number;
+      sealed_watermark_ms: string;
+      leaf_order_rule: string;
+      algo: string;
+      created_at_ms: string;
+      customer_id: string;
+      metric: string;
+    }>(
+      `SELECT wr.*, bw.customer_id, bw.metric
+       FROM window_receipt wr JOIN billing_window bw ON bw.window_key = wr.window_key
+       WHERE wr.window_key = $1`,
+      [windowKey],
+    );
+    if (r.rows.length === 0) return null;
+    const row = r.rows[0]!;
+    const client = await this.reader.connect();
+    let leaves: ReceiptLeaf[];
+    try {
+      leaves = await this.readLeaves(client, windowKey);
+    } finally {
+      client.release();
+    }
+    const micros = BigInt(row.billed_total_micros);
+    const receipt: WindowReceipt = {
+      windowKey: row.window_key,
+      customerId: row.customer_id,
+      metric: row.metric,
+      mode: aggregationMode(row.metric),
+      sealedWatermark: Number(row.sealed_watermark_ms),
+      billedTotalMicros: row.billed_total_micros,
+      billedTotal: formatMicros(micros),
+      eventCount: row.event_count,
+      merkleRoot: row.merkle_root,
+      signature: row.signature,
+      leafOrderRule: row.leaf_order_rule,
+      algo: row.algo,
+      createdAtMs: Number(row.created_at_ms),
+    };
+    return { receipt, leaves: toSerializedLeaves(leaves) };
   }
 
   async windowTotal(windowKey: string): Promise<WindowTotal> {

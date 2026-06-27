@@ -2,7 +2,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname } from "node:path";
 
 import { formatMicros, parseMicros } from "../decimal";
-import { aggregateForMode, aggregationMode } from "./determinism";
+import { aggregateForMode, aggregationMode, windowedInTotalOrder } from "./determinism";
+import { buildReceipt, toSerializedLeaves, type AuditBundle, type WindowReceipt } from "./receipt";
 import type { MeteringEngine } from "./engine";
 import type {
   BillingWindow,
@@ -38,7 +39,8 @@ interface StreamState {
 type WalRecord =
   | { t: "event"; e: SerializedLoggedEvent }
   | { t: "seal"; windowKey: string; sealedAt: number; sealedWatermark: number }
-  | { t: "correction"; c: CorrectionRecord };
+  | { t: "correction"; c: CorrectionRecord }
+  | { t: "receipt"; r: WindowReceipt };
 
 interface SerializedLoggedEvent {
   eventId: string;
@@ -64,6 +66,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
   private readonly windowMap = new Map<string, BillingWindow>();
   private readonly correctionLog: CorrectionRecord[] = [];
   private readonly correctedIds = new Set<string>();
+  private readonly receipts = new Map<string, WindowReceipt>();
 
   private readonly latenessGraceMs: number;
   private readonly windowMs: number;
@@ -171,9 +174,40 @@ export class MemoryMeteringEngine implements MeteringEngine {
         w.sealedWatermark = wm;
         newlySealed.push(w.windowKey);
         this.wal({ t: "seal", windowKey: w.windowKey, sealedAt: now, sealedWatermark: wm });
+
+        // Commit the customer-verifiable receipt atomically with the seal.
+        const leaves = windowedInTotalOrder(this.log.values(), w).map((e) => ({
+          eventId: e.eventId,
+          eventTimeMs: e.eventTime,
+          quantityMicros: e.quantityMicros,
+        }));
+        const receipt = buildReceipt({
+          windowKey: w.windowKey,
+          customerId: w.customerId,
+          metric: w.metric,
+          sealedWatermark: wm,
+          leaves,
+          createdAtMs: now,
+        });
+        this.receipts.set(w.windowKey, receipt);
+        this.wal({ t: "receipt", r: receipt });
       }
     }
     return { newlySealed, windows: this.snapshotWindows() };
+  }
+
+  async receiptBundle(windowKey: string): Promise<AuditBundle | null> {
+    const receipt = this.receipts.get(windowKey);
+    const w = this.windowMap.get(windowKey);
+    if (!receipt || !w) return null;
+    const leaves = toSerializedLeaves(
+      windowedInTotalOrder(this.log.values(), w).map((e) => ({
+        eventId: e.eventId,
+        eventTimeMs: e.eventTime,
+        quantityMicros: e.quantityMicros,
+      })),
+    );
+    return { receipt, leaves };
   }
 
   async windowTotal(windowKey: string): Promise<WindowTotal> {
@@ -228,6 +262,7 @@ export class MemoryMeteringEngine implements MeteringEngine {
     this.windowMap.clear();
     this.correctionLog.length = 0;
     this.correctedIds.clear();
+    this.receipts.clear();
     if (this.walPath) {
       mkdirSync(dirname(this.walPath), { recursive: true });
       writeFileSync(this.walPath, "");
@@ -344,6 +379,8 @@ export class MemoryMeteringEngine implements MeteringEngine {
           w.sealedAt = rec.sealedAt;
           w.sealedWatermark = rec.sealedWatermark;
         }
+      } else if (rec.t === "receipt") {
+        this.receipts.set(rec.r.windowKey, rec.r);
       } else {
         this.correctionLog.push(rec.c);
         this.correctedIds.add(rec.c.eventId);

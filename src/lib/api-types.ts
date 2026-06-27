@@ -71,6 +71,34 @@ export interface ReplayView {
   runs: { order: number; delivered: number; grandTotal: string }[];
 }
 
+/** Customer-verifiable invoice receipt (browser-safe DTO; bigints as strings). */
+export interface WindowReceiptView {
+  windowKey: string;
+  customerId: string;
+  metric: string;
+  mode: "counter" | "gauge";
+  sealedWatermark: number;
+  billedTotalMicros: string;
+  billedTotal: string;
+  eventCount: number;
+  merkleRoot: string;
+  signature: string;
+  leafOrderRule: string;
+  algo: string;
+  createdAtMs: number;
+}
+
+export interface SerializedLeaf {
+  eventId: string;
+  eventTimeMs: number;
+  quantityMicros: string;
+}
+
+export interface AuditBundle {
+  receipt: WindowReceiptView;
+  leaves: SerializedLeaf[];
+}
+
 /** "Pull the Tiebreaker" — gauge billed value across every arrival permutation,
  * with the event_id tiebreaker ON (total order) or OFF (diagnostic). */
 export interface GaugeBreakerView {

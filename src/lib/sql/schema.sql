@@ -48,3 +48,18 @@ CREATE TABLE IF NOT EXISTS correction_epoch (
   quarantined_at_ms bigint        NOT NULL,
   reason            text          NOT NULL DEFAULT 'late_after_seal'
 );
+
+-- Customer-verifiable invoice receipt: a Merkle commitment over a sealed
+-- window's admitted events, written inside the seal transaction so it cannot be
+-- backdated. Anyone can recompute merkle_root + billed_total from the leaves.
+CREATE TABLE IF NOT EXISTS window_receipt (
+  window_key          text   PRIMARY KEY REFERENCES billing_window(window_key),
+  merkle_root         text   NOT NULL,
+  signature           text   NOT NULL,
+  billed_total_micros bigint NOT NULL,
+  event_count         int    NOT NULL,
+  sealed_watermark_ms bigint NOT NULL,
+  leaf_order_rule     text   NOT NULL,
+  algo                text   NOT NULL,
+  created_at_ms       bigint NOT NULL
+);

@@ -10,6 +10,7 @@ import type {
   WindowFilter,
   WindowTotal,
 } from "./types";
+import type { AuditBundle } from "./receipt";
 
 /**
  * The metering contract. Two implementations — `memory` and `aurora` — are
@@ -48,6 +49,13 @@ export interface MeteringEngine {
 
   /** Quarantined late-after-seal events for a window (the audit view). */
   corrections(windowKey: string): Promise<CorrectionRecord[]>;
+
+  /**
+   * The customer-verifiable audit bundle for a SEALED window: the committed
+   * Merkle receipt plus the ordered leaves, so anyone can independently
+   * recompute the root and billed total. null if the window isn't sealed.
+   */
+  receiptBundle(windowKey: string): Promise<AuditBundle | null>;
 
   /** Current watermark for a stream, or null if the stream is unseen. */
   watermark(customerId: string, metric: string): Promise<WatermarkState | null>;

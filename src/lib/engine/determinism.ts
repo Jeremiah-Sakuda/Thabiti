@@ -74,6 +74,14 @@ function collectWindowed(log: Iterable<LoggedEvent>, window: BillingWindow): Log
   return windowed;
 }
 
+/** The admitted events of a window in canonical total order (for the receipt). */
+export function windowedInTotalOrder(
+  log: Iterable<LoggedEvent>,
+  window: BillingWindow,
+): LoggedEvent[] {
+  return collectWindowed(log, window);
+}
+
 /** Counter total — running SUM over micro-units; mirrors aggregate.sql. */
 export function aggregateBilledTotal(
   log: Iterable<LoggedEvent>,

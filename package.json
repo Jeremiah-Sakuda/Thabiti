@@ -15,7 +15,9 @@
     "harness:crash": "tsx src/harness/crash.ts",
     "harness:ingester": "tsx src/harness/ingester.ts",
     "db:schema": "tsx src/scripts/apply-schema.ts",
-    "db:check": "tsx src/scripts/check-determinism.ts"
+    "db:check": "tsx src/scripts/check-determinism.ts",
+    "invoice:dump": "tsx src/scripts/dump-invoice.ts",
+    "verify": "tsx src/scripts/verify-receipt.ts"
   },
   "dependencies": {
     "next": "^16.2.9",
