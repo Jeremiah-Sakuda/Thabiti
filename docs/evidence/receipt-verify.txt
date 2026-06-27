@@ -1,0 +1,54 @@
+Thabiti — independent receipt verification against LIVE Aurora
+Cluster: Aurora PostgreSQL Serverless v2, us-west-2 (writer + cluster-ro reader)
+Bundle: THABITI_BACKEND=aurora npm run invoice:dump  (seed 2026)
+Verifier: npm run verify -- invoice.json   (src/lib/verify.ts — Web Crypto, ZERO engine deps)
+Captured: 2026-06-27T03:19:34Z
+----------------------------------------------------------------------
+=== VERIFY (honest receipt: 27 sealed windows from the live cluster) ===
+
+Thabiti — independent invoice verification (27 windows)
+recomputing Merkle root + billed total from the leaves, with zero engine dependency
+
+  ✓ alls:1750000000000    20214.000000  40 leaves · root✓ total✓ sig✓ · root 82bfb57ae101…
+  ✓ alls:1750000010000    20797.000000  40 leaves · root✓ total✓ sig✓ · root 4d2501d4d983…
+  ✓ alls:1750000020000    23049.000000  40 leaves · root✓ total✓ sig✓ · root c12bd1741c38…
+  ✓ ress:1750000000000    17827.000000  40 leaves · root✓ total✓ sig✓ · root 96cb527e22a8…
+  ✓ ress:1750000010000    20947.000000  40 leaves · root✓ total✓ sig✓ · root 77de0b2ba22f…
+  ✓ ress:1750000020000    20711.000000  40 leaves · root✓ total✓ sig✓ · root 321220e4e633…
+  ✓ kens:1750000000000    20453.000000  40 leaves · root✓ total✓ sig✓ · root 56545ca82e75…
+  ✓ kens:1750000010000    21404.000000  40 leaves · root✓ total✓ sig✓ · root caab6aaae39e…
+  ✓ kens:1750000020000    18607.000000  40 leaves · root✓ total✓ sig✓ · root 86226f19b63e…
+  ✓ alls:1750000000000    19732.000000  40 leaves · root✓ total✓ sig✓ · root ecc29199419d…
+  ✓ alls:1750000010000    17495.000000  40 leaves · root✓ total✓ sig✓ · root aa8909f00534…
+  ✓ alls:1750000020000    16506.000000  40 leaves · root✓ total✓ sig✓ · root f7a1d5147426…
+  ✓ ress:1750000000000    21187.000000  40 leaves · root✓ total✓ sig✓ · root bf8889cff7fc…
+  ✓ ress:1750000010000    20633.000000  40 leaves · root✓ total✓ sig✓ · root 18d517bc11d4…
+  ✓ ress:1750000020000    17791.000000  40 leaves · root✓ total✓ sig✓ · root a2a7452a2c79…
+  ✓ kens:1750000000000    18274.000000  40 leaves · root✓ total✓ sig✓ · root 7aa03c4e1c30…
+  ✓ kens:1750000010000    20338.000000  40 leaves · root✓ total✓ sig✓ · root 5ce4f326b18f…
+  ✓ kens:1750000020000    21304.000000  40 leaves · root✓ total✓ sig✓ · root 43eaadc539cc…
+  ✓ alls:1750000000000    19628.000000  40 leaves · root✓ total✓ sig✓ · root 8f62a81f3634…
+  ✓ alls:1750000010000    18952.000000  40 leaves · root✓ total✓ sig✓ · root d5a243adcf1d…
+  ✓ alls:1750000020000    18552.000000  40 leaves · root✓ total✓ sig✓ · root 6934bb8ed3db…
+  ✓ ress:1750000000000    21144.000000  40 leaves · root✓ total✓ sig✓ · root 98bef4f99d3c…
+  ✓ ress:1750000010000    21838.000000  40 leaves · root✓ total✓ sig✓ · root 4bc6dfedb7b5…
+  ✓ ress:1750000020000    17837.000000  40 leaves · root✓ total✓ sig✓ · root f3459d64bf18…
+  ✓ kens:1750000000000    19733.000000  40 leaves · root✓ total✓ sig✓ · root 0d96514cef97…
+  ✓ kens:1750000010000    17301.000000  40 leaves · root✓ total✓ sig✓ · root 45f7baeaf758…
+  ✓ kens:1750000020000    16729.000000  40 leaves · root✓ total✓ sig✓ · root 8f6dbfac36e3…
+
+  grand total  528983.000000
+  invoice root b43aacdaeef42685c4a1e9aa2253537bbd563b405a70bea858709cd92ce43de7
+
+✓ VERIFIED — every window's root and billed total reproduce independently.
+
+
+=== TAMPER (challenge the invoice): edit ONE leaf, keep the signed receipt ===
+tampered window alls:1750000000000: leaf 470a 959000000 -> 999999000000
+  ✗ alls:1750000000000  1019254.000000  40 leaves · root✗ total✗ sig✗ · root 85c1dd061c6a…
+  ✓ alls:1750000010000    20797.000000  40 leaves · root✓ total✓ sig✓ · root 4d2501d4d983…
+  ✓ alls:1750000020000    23049.000000  40 leaves · root✓ total✓ sig✓ · root c12bd1741c38…
+  ✓ ress:1750000000000    17827.000000  40 leaves · root✓ total✓ sig✓ · root 96cb527e22a8…
+  ✓ ress:1750000010000    20947.000000  40 leaves · root✓ total✓ sig✓ · root 77de0b2ba22f…
+  ✓ ress:1750000020000    20711.000000  40 leaves · root✓ total✓ sig✓ · root 321220e4e633…
+(verifier exit code on tamper:  — non-zero = rejected)

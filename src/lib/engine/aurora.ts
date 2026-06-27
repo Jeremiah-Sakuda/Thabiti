@@ -459,7 +459,9 @@ export class AuroraMeteringEngine implements MeteringEngine {
 
   async reset(): Promise<void> {
     await this.init();
-    await this.writer.query("TRUNCATE correction_epoch, event_log, billing_window, stream_watermark");
+    // window_receipt + correction_epoch reference billing_window — truncate all
+    // in one statement so the FKs are satisfied.
+    await this.writer.query("TRUNCATE window_receipt, correction_epoch, event_log, billing_window, stream_watermark");
   }
 
   /**
