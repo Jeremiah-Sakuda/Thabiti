@@ -629,3 +629,57 @@
 .chipBad .chipValue {
   color: var(--bad);
 }
+
+/* ── receipt card ───────────────────────────────────────────────────────────── */
+.receiptBadge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  transition: all 0.25s ease;
+}
+.receiptBadgeSub {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.receiptOk {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid var(--good);
+  color: var(--good);
+}
+.receiptBad {
+  background: rgba(255, 93, 108, 0.1);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  animation: feedIn 0.35s ease;
+}
+.receiptGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+.receiptGrid dt {
+  color: var(--fg-3);
+}
+.receiptGrid dd {
+  margin: 0;
+  color: var(--fg-1);
+  word-break: break-all;
+}
+.receiptMismatch {
+  color: var(--bad);
+  text-decoration: line-through;
+}
+.receiptHint {
+  font-size: 11px;
+  color: var(--fg-3);
+}

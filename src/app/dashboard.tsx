@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AcuPanel } from "@/components/AcuPanel";
 import { GaugeBreaker } from "@/components/GaugeBreaker";
 import { QuarantineFeed } from "@/components/QuarantineFeed";
+import { ReceiptCard } from "@/components/ReceiptCard";
 import { ReplayPanel } from "@/components/ReplayPanel";
 import { SqlCard } from "@/components/SqlCard";
 import { StatStrip } from "@/components/StatStrip";
@@ -217,6 +218,7 @@ export function Dashboard() {
         </div>
         <div className={styles.col}>
           <ReplayPanel replay={replay} running={replayRunning} />
+          {state && <ReceiptCard windows={state.windows} />}
           <GaugeBreaker />
           <SqlCard />
         </div>
