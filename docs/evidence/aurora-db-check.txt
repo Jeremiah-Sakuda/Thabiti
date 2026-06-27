@@ -1,12 +1,9 @@
 Thabiti — live Aurora determinism proof (db:check)
 Cluster: Aurora PostgreSQL Serverless v2, us-west-2 (writer + cluster-ro reader)
 Command: THABITI_BACKEND=aurora npm run db:check
-Captured: 2026-06-23T16:26:00Z
+Re-captured after adding window_receipt (determinism unchanged by the receipt layer)
+Captured: 2026-06-27T03:30:15Z
 ----------------------------------------------------------------------
-
-> thabiti@0.1.0 db:check
-> tsx src/scripts/check-determinism.ts
-
 backend = aurora
 scenario: 1440 unique events across 36 windows
 

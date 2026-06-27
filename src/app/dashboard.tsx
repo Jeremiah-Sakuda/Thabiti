@@ -169,8 +169,10 @@ export function Dashboard() {
       <div className={styles.marquee}>
         <strong>Watermark-bounded temporal determinism.</strong> The billed total for a window is{" "}
         <span className={styles.hl}>byte-identical across replays</span> despite late, out-of-order, and
-        clock-skewed events — and once a window is <span className={styles.hl}>SEALED</span>, no later event
-        can ever mutate it.
+        clock-skewed events; once a window is <span className={styles.hl}>SEALED</span>, no later event
+        can ever mutate it; and the customer can{" "}
+        <span className={styles.hl}>independently verify</span> the bill against a signed Merkle receipt.{" "}
+        <em>Don&apos;t trust the bill — verify it.</em>
       </div>
 
       <div className={styles.controls}>

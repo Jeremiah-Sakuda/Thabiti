@@ -29,7 +29,7 @@ writer.
 On screen: the **writer ACU** sparkline spikes; the **reader ACU** rises as the
 deterministic SQL aggregation folds the log.
 
-### Beat 2 — the seal (0:30–1:15)
+### Beat 2 — the seal + verify (0:30–1:20)
 
 Windows flip to **SEALED** as the watermark line advances past their close. A
 late event whose event-time lands inside a now-sealed window drops into the
@@ -37,6 +37,20 @@ late event whose event-time lands inside a now-sealed window drops into the
 
 > *"A late event just tried to rewrite a sealed invoice. It was rejected and
 > quarantined — the sealed number did not move."*
+
+Then the money shot — the **Verify the bill** card shows the sealed window's
+receipt with a green **✓ VERIFIED** badge (the browser independently recomputed
+the Merkle root + billed total from the audit bundle). Press **Tamper with a
+leaf**: the recomputed root stops matching the signed root and the badge flips to
+**✗ REJECTED**, live.
+
+> *"The customer doesn't have to trust us. Their own verifier recomputed the bill
+> from the sealed log and it checks out. Change one event — it's rejected. Don't
+> trust the bill; verify it."*
+
+(Terminal alternative: `npm run invoice:dump --silent > invoice.json && npm run
+verify -- invoice.json` reproduces every root + total with zero engine
+dependency.)
 
 ### Beat 3 — the crash (1:15–2:15)
 

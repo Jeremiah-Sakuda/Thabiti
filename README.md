@@ -4,13 +4,17 @@
 
 > **Watermark-bounded temporal determinism** — the billed total for a window is
 > **byte-identical across replays** despite late, out-of-order, and clock-skewed
-> events, and once a window is **SEALED**, no later event can ever mutate it.
+> events; once a window is **SEALED**, no later event can ever mutate it; and the
+> **customer can independently verify** the bill is exactly the deterministic
+> function of the sealed log. *Don't trust the bill — verify it.*
 
 Usage-based billing competes on exactly one thing: **trust in the number.**
 Customers are charged real money off an aggregate computed over a messy event
 stream. Thabiti turns a hostile, real-world usage-event firehose — duplicates,
 out-of-order delivery, clock skew, late stragglers — into **one provably correct
-invoice, the same invoice every single time.**
+invoice, the same invoice every single time** — and ships every sealed window
+with a **cryptographic receipt the customer can recompute themselves**, so
+correctness is something the buyer can check, not something the vendor asserts.
 
 The billed total is a **SQL fact, not a JavaScript reduce**: a single
 deterministic window-function aggregation over an append-only log, under a
@@ -23,7 +27,7 @@ promise is that the billed number does not move.)*
 
 ## The guarantee
 
-Three properties, each proven by a property test that runs against **both**
+Four properties, each proven by a property test that runs against **both**
 backends (in-memory and Aurora) for any seed:
 
 1. **Replay-order invariance** — ingest the same event set in any number of
@@ -36,6 +40,12 @@ backends (in-memory and Aurora) for any seed:
 3. **Crash-replay equivalence** — hard-kill the ingester mid-flood (`kill -9`),
    restart, re-ingest from the durable append-only log → the recovered total is
    bit-identical to the deterministic projection.
+4. **Customer-verifiable receipt** — every sealed window commits a sha256 Merkle
+   root over its admitted events (in the total order), written atomically with
+   the seal. A **standalone verifier with zero engine dependency** recomputes the
+   root and billed total from the audit bundle and checks them against the signed
+   receipt: tamper with one leaf and verification fails. See
+   [Verify the bill](#verify-the-bill-customer-auditable-receipts).
 
 **What the guarantee precisely says.** Determinism is *watermark-bounded* and
 holds under two explicit, industry-standard preconditions:
@@ -99,6 +109,33 @@ Reproduce: set `AURORA_WRITER_URL` / `AURORA_READER_URL` (see
 > console `ServerlessDatabaseCapacity` screenshot (writer + reader ACU spiking
 > then collapsing to ~0) and the < 3-minute video are attached with the Devpost
 > submission.
+
+## Verify the bill: customer-auditable receipts
+
+Most metering vendors say *"trust us, the bill is right."* Thabiti lets the
+**customer** check it. Every sealed window commits a **sha256 Merkle root** over
+its admitted events (in the total order `event_time_ms, event_id`), written
+**inside the seal transaction** so it can't be backdated, plus an HMAC signature.
+`GET /api/windows/:key/receipt` returns the *audit bundle* — the signed receipt
+and the ordered leaves.
+
+A **standalone verifier** ([src/lib/verify.ts](src/lib/verify.ts), Web Crypto,
+**zero dependency on the metering engine**) recomputes the root and the billed
+total from the leaves and checks them against the receipt — a second, independent
+implementation of the same commitment. Anyone can run it:
+
+```bash
+THABITI_BACKEND=aurora npm run invoice:dump --silent > invoice.json
+npm run verify -- invoice.json     # recomputes every root + total, independently
+```
+
+Captured against the live cluster in
+[docs/evidence/receipt-verify.txt](docs/evidence/receipt-verify.txt): all sealed
+windows reproduce, and the **invoice root is byte-identical to the in-memory
+engine's** (cross-backend receipt parity). Tamper with one leaf and the verifier
+rejects that window. The dashboard's **"Verify the bill"** card runs this same
+verifier in the browser — its ✓ VERIFIED badge flips to ✗ REJECTED the instant
+you press *Tamper*.
 
 ## Quickstart (zero cloud dependencies)
 
